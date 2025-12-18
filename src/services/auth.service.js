@@ -1,0 +1,127 @@
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
+import db from "../config/db.js";
+import { ROLES } from "../constants/roles.js";
+
+const SALT_ROUNDS = 10;
+
+const sanitizeUser = (user) => {
+  if (!user) return null;
+  const { password, ...rest } = user;
+  return rest;
+};
+
+const createError = (status, message) => {
+  const err = new Error(message);
+  err.status = status;
+  return err;
+};
+
+const generateTokens = (user) => {
+  if (!process.env.JWT_SECRET) {
+    throw new Error("JWT_SECRET is not configured");
+  }
+
+  const payload = {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+  };
+
+  const accessToken = jwt.sign(payload, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRES_IN || "1h",
+  });
+
+  const refreshSecret =
+    process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
+
+  const refreshToken = jwt.sign(payload, refreshSecret, {
+    expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || "7d",
+  });
+
+  return { accessToken, refreshToken };
+};
+
+export const registerUser = async ({ name, email, password }) => {
+  const [existing] = await db.query("SELECT id FROM users WHERE email = ?", [
+    email,
+  ]);
+  if (existing.length > 0) {
+    throw createError(409, "Email already registered");
+  }
+
+  const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+  const [result] = await db.query(
+    "INSERT INTO users (name, email, password, role, is_active) VALUES (?, ?, ?, ?, ?)",
+    [name, email, hashedPassword, ROLES.USER, 1]
+  );
+
+  const user = {
+    id: result.insertId,
+    name,
+    email,
+    role: ROLES.USER,
+    is_active: 1,
+  };
+
+  const tokens = generateTokens(user);
+  return { user: sanitizeUser(user), ...tokens };
+};
+
+export const loginUser = async ({ email, password }) => {
+  const [rows] = await db.query("SELECT * FROM users WHERE email = ?", [email]);
+  const user = rows[0];
+
+  if (!user) {
+    throw createError(401, "Invalid credentials");
+  }
+
+  if (!user.is_active) {
+    throw createError(403, "Account is disabled");
+  }
+
+  const isMatch = await bcrypt.compare(password, user.password);
+  if (!isMatch) {
+    throw createError(401, "Invalid credentials");
+  }
+
+  const tokens = generateTokens(user);
+  return { user: sanitizeUser(user), ...tokens };
+};
+
+export const refreshTokens = async (refreshToken) => {
+  if (!refreshToken) {
+    throw createError(400, "Refresh token is required");
+  }
+
+  const refreshSecret =
+    process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
+
+  try {
+    const decoded = jwt.verify(refreshToken, refreshSecret);
+    const [rows] = await db.query("SELECT * FROM users WHERE id = ?", [
+      decoded.id,
+    ]);
+    const user = rows[0];
+
+    if (!user) {
+      throw createError(404, "User not found");
+    }
+
+    if (!user.is_active) {
+      throw createError(403, "Account is disabled");
+    }
+
+    const tokens = generateTokens(user);
+    return { user: sanitizeUser(user), ...tokens };
+  } catch (error) {
+    if (error.status) throw error;
+    throw createError(401, "Invalid or expired refresh token");
+  }
+};
+
+export default {
+  registerUser,
+  loginUser,
+  refreshTokens,
+};
