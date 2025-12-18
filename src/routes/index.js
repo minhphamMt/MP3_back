@@ -5,6 +5,7 @@ import userRoutes from "./user.routes.js";
 import artistRoutes from "./artist.routes.js";
 import albumRoutes from "./album.routes.js";
 import songRoutes from "./song.routes.js";
+import playlistRoutes from "./playlist.routes.js";
 
 const router = Router();
 
@@ -22,5 +23,6 @@ router.use("/users", userRoutes);
 router.use("/artists", artistRoutes);
 router.use("/albums", albumRoutes);
 router.use("/songs", songRoutes);
+router.use("/playlists", playlistRoutes);
 
 export default router;

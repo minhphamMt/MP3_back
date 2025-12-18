@@ -1,6 +1,12 @@
 import db from "../config/db.js";
 import { buildPaginationMeta } from "../utils/pagination.js";
 
+const createError = (status, message) => {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+};
+
 const normalizeGenres = (genres) => {
   if (!genres) return [];
   const list = Array.isArray(genres)
@@ -14,6 +20,33 @@ const normalizeGenres = (genres) => {
 
 const parseGenreString = (genreString) =>
   genreString ? genreString.split(",").filter(Boolean) : [];
+
+const getSongLikesCount = async (songId) => {
+  const [rows] = await db.query(
+    "SELECT COUNT(*) AS likes FROM song_likes WHERE song_id = ?",
+    [songId]
+  );
+  return rows[0]?.likes || 0;
+};
+
+const getSongPlayCount = async (songId) => {
+  const [rows] = await db.query(
+    "SELECT play_count FROM songs WHERE id = ? LIMIT 1",
+    [songId]
+  );
+  if (!rows[0]) {
+    throw createError(404, "Song not found");
+  }
+  return rows[0].play_count || 0;
+};
+
+const getSongEngagement = async (songId) => {
+  const [playCount, likeCount] = await Promise.all([
+    getSongPlayCount(songId),
+    getSongLikesCount(songId),
+  ]);
+  return { playCount, likeCount };
+};
 
 export const listSongs = async ({
   page,
@@ -71,6 +104,7 @@ export const listSongs = async ({
       ar.name AS artist_name,
       al.title AS album_title,
       (SELECT GROUP_CONCAT(DISTINCT g2.name)
+      (SELECT COUNT(*) FROM song_likes sl WHERE sl.song_id = s.id) AS like_count,
         FROM song_genres sg2
         JOIN genres g2 ON g2.id = sg2.genre_id
         WHERE sg2.song_id = s.id) AS genres
@@ -86,6 +120,7 @@ export const listSongs = async ({
 
   const items = rows.map((row) => ({
     ...row,
+    like_count: row.like_count || 0,
     genres: parseGenreString(row.genres),
     artist: row.artist_id ? { id: row.artist_id, name: row.artist_name } : null,
     album: row.album_id ? { id: row.album_id, title: row.album_title } : null,
@@ -128,6 +163,7 @@ export const getSongById = async (id, { status, genres = [] } = {}) => {
       s.*,
       ar.name AS artist_name,
       al.title AS album_title,
+      (SELECT COUNT(*) FROM song_likes sl WHERE sl.song_id = s.id) AS like_count,
       (SELECT GROUP_CONCAT(DISTINCT g2.name)
         FROM song_genres sg2
         JOIN genres g2 ON g2.id = sg2.genre_id
@@ -149,6 +185,7 @@ export const getSongById = async (id, { status, genres = [] } = {}) => {
 
   return {
     ...song,
+    like_count: song.like_count || 0,
     genres: parseGenreString(song.genres),
     artist: song.artist_id
       ? { id: song.artist_id, name: song.artist_name }
@@ -158,8 +195,57 @@ export const getSongById = async (id, { status, genres = [] } = {}) => {
       : null,
   };
 };
+export const likeSong = async (songId, userId) => {
+  const [songs] = await db.query("SELECT id FROM songs WHERE id = ?", [songId]);
+  if (!songs[0]) {
+    throw createError(404, "Song not found");
+  }
 
+  await db.query(
+    `
+    INSERT INTO song_likes (song_id, user_id)
+    VALUES (?, ?)
+    ON DUPLICATE KEY UPDATE song_id = song_id
+  `,
+    [songId, userId]
+  );
+
+  return getSongEngagement(songId);
+};
+
+export const unlikeSong = async (songId, userId) => {
+  const [songs] = await db.query("SELECT id FROM songs WHERE id = ?", [songId]);
+  if (!songs[0]) {
+    throw createError(404, "Song not found");
+  }
+
+  await db.query("DELETE FROM song_likes WHERE song_id = ? AND user_id = ?", [
+    songId,
+    userId,
+  ]);
+
+  return getSongEngagement(songId);
+};
+
+export const incrementPlayCount = async (songId) => {
+  const [result] = await db.query(
+    "UPDATE songs SET play_count = play_count + 1 WHERE id = ?",
+    [songId]
+  );
+
+  if (!result.affectedRows) {
+    throw createError(404, "Song not found");
+  }
+
+  return getSongEngagement(songId);
+};
+
+export const getSongStats = async (songId) => getSongEngagement(songId);
 export default {
   listSongs,
   getSongById,
+  likeSong,
+  unlikeSong,
+  incrementPlayCount,
+  getSongStats,
 };
