@@ -1,5 +1,6 @@
 import db from "../config/db.js";
 import { buildPaginationMeta } from "../utils/pagination.js";
+import { recordListeningHistory } from "./history.service.js";
 
 const createError = (status, message) => {
   const error = new Error(message);
@@ -227,6 +228,23 @@ export const unlikeSong = async (songId, userId) => {
   return getSongEngagement(songId);
 };
 
+export const recordSongPlay = async (songId, userId) => {
+  const [result] = await db.query(
+    "UPDATE songs SET play_count = play_count + 1 WHERE id = ?",
+    [songId]
+  );
+
+  if (!result.affectedRows) {
+    throw createError(404, "Song not found");
+  }
+
+  if (userId) {
+    await recordListeningHistory(userId, songId);
+  }
+
+  return getSongEngagement(songId);
+};
+
 export const incrementPlayCount = async (songId) => {
   const [result] = await db.query(
     "UPDATE songs SET play_count = play_count + 1 WHERE id = ?",
@@ -246,6 +264,7 @@ export default {
   getSongById,
   likeSong,
   unlikeSong,
+  recordSongPlay,
   incrementPlayCount,
   getSongStats,
 };

@@ -1,7 +1,7 @@
 import {
   getSongById,
   getSongStats,
-  incrementPlayCount,
+  recordSongPlay,
   likeSong,
   listSongs,
   unlikeSong,
@@ -75,7 +75,11 @@ export const unlikeSongHandler = async (req, res, next) => {
 
 export const recordPlay = async (req, res, next) => {
   try {
-    const stats = await incrementPlayCount(req.params.id);
+    if (!req.user?.id) {
+      return errorResponse(res, "Authentication required", 401);
+    }
+
+    const stats = await recordSongPlay(req.params.id, req.user.id);
     return successResponse(res, stats);
   } catch (error) {
     return next(error);

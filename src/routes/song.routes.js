@@ -9,6 +9,6 @@ router.get("/:id", songController.getSong);
 router.get("/:id/stats", songController.getSongEngagement);
 router.post("/:id/like", authMiddleware, songController.likeSongHandler);
 router.delete("/:id/like", authMiddleware, songController.unlikeSongHandler);
-router.post("/:id/play", songController.recordPlay);
+router.post("/:id/play", authMiddleware, songController.recordPlay);
 
 export default router;
