@@ -1,7 +1,8 @@
 import { logger } from "../utils/logger.js";
+import { errorResponse } from "../utils/response.js";
 
 const errorMiddleware = (err, req, res, next) => {
-  const statusCode = err.status || err.statusCode || 500;
+  const statusCode = err.statusCode || err.status || 500;
   const message = err.message || "Internal server error";
 
   logger.error(message, {
@@ -11,10 +12,14 @@ const errorMiddleware = (err, req, res, next) => {
     stack: err.stack,
   });
 
-  res.status(statusCode).json({
-    message,
-    ...(process.env.NODE_ENV !== "production" && { stack: err.stack }),
-  });
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  const errors =
+    process.env.NODE_ENV !== "production" ? { stack: err.stack } : undefined;
+
+  return errorResponse(res, message, statusCode, errors);
 };
 
 export default errorMiddleware;

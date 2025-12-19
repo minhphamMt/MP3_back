@@ -1,30 +1,38 @@
-export const successResponse = (res, data, meta = null, status = 200) => {
+const buildResponse = (success, data, message, meta, errors) => {
   const payload = {
-    success: true,
+    success,
     data,
+    message,
   };
 
-  if (meta) {
+  if (meta !== undefined && meta !== null) {
     payload.meta = meta;
   }
+  if (errors !== undefined) {
+    payload.errors = errors;
+  }
 
+  return payload;
+};
+
+export const successResponse = (
+  res,
+  data = null,
+  meta = undefined,
+  status = 200,
+  message = "Success"
+) => {
+  const payload = buildResponse(true, data, message, meta);
   return res.status(status).json(payload);
 };
 
 export const errorResponse = (
   res,
-  message,
+  message = "An error occurred",
   status = 400,
   errors = undefined
 ) => {
-  const payload = {
-    success: false,
-    message,
-  };
-
-  if (errors) {
-    payload.errors = errors;
-  }
+  const payload = buildResponse(false, null, message, undefined, errors);
 
   return res.status(status).json(payload);
 };
