@@ -1,6 +1,12 @@
 import db from "../config/db.js";
 import { buildPaginationMeta } from "../utils/pagination.js";
 
+const createError = (status, message) => {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+};
+
 const normalizeGenres = (genres) => {
   if (!genres) return [];
   const list = Array.isArray(genres)
@@ -197,7 +203,29 @@ export const getAlbumById = async (
   };
 };
 
+export const updateAlbumCover = async (albumId, coverUrl) => {
+  const [albums] = await db.query("SELECT id FROM albums WHERE id = ?", [
+    albumId,
+  ]);
+
+  if (!albums[0]) {
+    throw createError(404, "Album not found");
+  }
+
+  if (!coverUrl) {
+    return getAlbumById(albumId);
+  }
+
+  await db.query("UPDATE albums SET cover_url = ? WHERE id = ?", [
+    coverUrl,
+    albumId,
+  ]);
+
+  return getAlbumById(albumId);
+};
+
 export default {
   listAlbums,
   getAlbumById,
+  updateAlbumCover,
 };

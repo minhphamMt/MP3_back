@@ -50,6 +50,35 @@ const getSongEngagement = async (songId) => {
   return { playCount, likeCount };
 };
 
+export const updateSongMedia = async (songId, { audioPath, coverUrl }) => {
+  const [songs] = await db.query("SELECT id FROM songs WHERE id = ?", [songId]);
+  if (!songs[0]) {
+    throw createError(404, "Song not found");
+  }
+
+  const updates = [];
+  const params = [];
+
+  if (audioPath) {
+    updates.push("audio_path = ?");
+    params.push(audioPath);
+  }
+
+  if (coverUrl) {
+    updates.push("cover_url = ?");
+    params.push(coverUrl);
+  }
+
+  if (!updates.length) {
+    return getSongById(songId);
+  }
+
+  params.push(songId);
+
+  await db.query(`UPDATE songs SET ${updates.join(", ")} WHERE id = ?`, params);
+  return getSongById(songId);
+};
+
 export const reviewSong = async (
   songId,
   { status, reviewerId, rejectReason }
@@ -303,4 +332,5 @@ export default {
   incrementPlayCount,
   getSongStats,
   reviewSong,
+  updateSongMedia,
 };
