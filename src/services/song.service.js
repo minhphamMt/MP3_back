@@ -168,8 +168,8 @@ export const listSongs = async ({
       s.*,
       ar.name AS artist_name,
       al.title AS album_title,
-      (SELECT GROUP_CONCAT(DISTINCT g2.name)
       (SELECT COUNT(*) FROM song_likes sl WHERE sl.song_id = s.id) AS like_count,
+      (SELECT GROUP_CONCAT(DISTINCT g2.name)
         FROM song_genres sg2
         JOIN genres g2 ON g2.id = sg2.genre_id
         WHERE sg2.song_id = s.id) AS genres
