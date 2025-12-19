@@ -1,7 +1,7 @@
 import db from "../config/db.js";
 
 const DEFAULT_DAYS = 30;
-const EVENT_TIME_FIELD = "COALESCE(lh.played_at, lh.created_at)";
+const EVENT_TIME_FIELD = "lh.listened_at";
 const SUPPORTED_INTERVALS = ["day", "week", "month"];
 
 const createError = (status, message) => {
@@ -123,7 +123,10 @@ const mapSeriesRows = (rows, keyField) => {
       seriesMap.set(key, new Map());
     }
 
-    seriesMap.get(key).set(period, row.plays);
+    seriesMap.get(key).set(period, {
+      plays: Number(row.plays) || 0,
+      duration: Number(row.duration) || 0,
+    });
   });
 
   return seriesMap;
@@ -155,7 +158,8 @@ export const getTopSongsAnalytics = async ({
       s.title,
       s.artist_id,
       ar.name AS artist_name,
-      COUNT(*) AS total_plays
+      COUNT(*) AS total_plays,
+      COALESCE(SUM(lh.duration), 0) AS total_duration
     FROM listening_history lh
     JOIN songs s ON s.id = lh.song_id
     LEFT JOIN artists ar ON ar.id = s.artist_id
@@ -181,7 +185,8 @@ export const getTopSongsAnalytics = async ({
     SELECT
       lh.song_id,
       ${intervalExpr} AS period_start,
-      COUNT(*) AS plays
+      COUNT(*) AS plays,
+      COALESCE(SUM(lh.duration), 0) AS duration
     FROM listening_history lh
     WHERE ${EVENT_TIME_FIELD} BETWEEN ? AND ?
       AND lh.song_id IN (${placeholders})
@@ -198,7 +203,8 @@ export const getTopSongsAnalytics = async ({
     items: topRows.map((row) => {
       const base = {
         id: row.song_id,
-        totalPlays: row.total_plays,
+        totalPlays: Number(row.total_plays) || 0,
+        totalDuration: Number(row.total_duration) || 0,
         song: {
           id: row.song_id,
           title: row.title,
@@ -212,7 +218,8 @@ export const getTopSongsAnalytics = async ({
         ...base,
         series: buckets.map((period) => ({
           period,
-          plays: seriesMap.get(base.id)?.get(period) || 0,
+          plays: seriesMap.get(base.id)?.get(period)?.plays || 0,
+          duration: seriesMap.get(base.id)?.get(period)?.duration || 0,
         })),
       };
     }),
@@ -235,7 +242,8 @@ export const getTopArtistsAnalytics = async ({
     SELECT
       s.artist_id,
       ar.name AS artist_name,
-      COUNT(*) AS total_plays
+     COUNT(*) AS total_plays,
+      COALESCE(SUM(lh.duration), 0) AS total_duration
     FROM listening_history lh
     JOIN songs s ON s.id = lh.song_id
     JOIN artists ar ON ar.id = s.artist_id
@@ -262,7 +270,8 @@ export const getTopArtistsAnalytics = async ({
     SELECT
       s.artist_id,
       ${intervalExpr} AS period_start,
-      COUNT(*) AS plays
+       COUNT(*) AS plays,
+      COALESCE(SUM(lh.duration), 0) AS duration
     FROM listening_history lh
     JOIN songs s ON s.id = lh.song_id
     WHERE ${EVENT_TIME_FIELD} BETWEEN ? AND ?
@@ -280,7 +289,8 @@ export const getTopArtistsAnalytics = async ({
     items: topRows.map((row) => {
       const base = {
         id: row.artist_id,
-        totalPlays: row.total_plays,
+        totalPlays: Number(row.total_plays) || 0,
+        totalDuration: Number(row.total_duration) || 0,
         artist: { id: row.artist_id, name: row.artist_name },
       };
 
@@ -288,7 +298,8 @@ export const getTopArtistsAnalytics = async ({
         ...base,
         series: buckets.map((period) => ({
           period,
-          plays: seriesMap.get(base.id)?.get(period) || 0,
+          plays: seriesMap.get(base.id)?.get(period)?.plays || 0,
+          duration: seriesMap.get(base.id)?.get(period)?.duration || 0,
         })),
       };
     }),
@@ -311,7 +322,8 @@ export const getTopGenresAnalytics = async ({
     SELECT
       g.id AS genre_id,
       g.name AS genre_name,
-      COUNT(*) AS total_plays
+      COUNT(*) AS total_plays,
+      COALESCE(SUM(lh.duration), 0) AS total_duration
     FROM listening_history lh
     JOIN song_genres sg ON sg.song_id = lh.song_id
     JOIN genres g ON g.id = sg.genre_id
@@ -337,7 +349,8 @@ export const getTopGenresAnalytics = async ({
     SELECT
       g.id AS genre_id,
       ${intervalExpr} AS period_start,
-      COUNT(*) AS plays
+       COUNT(*) AS plays,
+      COALESCE(SUM(lh.duration), 0) AS duration
     FROM listening_history lh
     JOIN song_genres sg ON sg.song_id = lh.song_id
     JOIN genres g ON g.id = sg.genre_id
@@ -356,7 +369,8 @@ export const getTopGenresAnalytics = async ({
     items: topRows.map((row) => {
       const base = {
         id: row.genre_id,
-        totalPlays: row.total_plays,
+        totalPlays: Number(row.total_plays) || 0,
+        totalDuration: Number(row.total_duration) || 0,
         genre: { id: row.genre_id, name: row.genre_name },
       };
 
@@ -364,7 +378,8 @@ export const getTopGenresAnalytics = async ({
         ...base,
         series: buckets.map((period) => ({
           period,
-          plays: seriesMap.get(base.id)?.get(period) || 0,
+          plays: seriesMap.get(base.id)?.get(period)?.plays || 0,
+          duration: seriesMap.get(base.id)?.get(period)?.duration || 0,
         })),
       };
     }),
