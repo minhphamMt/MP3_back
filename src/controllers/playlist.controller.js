@@ -27,7 +27,9 @@ export const getPlaylist = async (req, res, next) => {
       return errorResponse(res, "Playlist not found", 404);
     }
 
-    if (Number(playlist.user_id) !== Number(req.user.id)) {
+    const isSystem = Boolean(playlist.is_system);
+
+    if (!isSystem && Number(playlist.user_id) !== Number(req.user.id)) {
       return errorResponse(res, "Forbidden", 403);
     }
 
@@ -39,11 +41,9 @@ export const getPlaylist = async (req, res, next) => {
 
 export const createPlaylistHandler = async (req, res, next) => {
   try {
-    const { name, description, is_public, isPublic } = req.body;
+    const { name } = req.body;
     const playlist = await createPlaylist(req.user.id, {
       name,
-      description,
-      isPublic: is_public ?? isPublic ?? true,
     });
     return successResponse(res, playlist, null, 201);
   } catch (error) {
@@ -53,11 +53,9 @@ export const createPlaylistHandler = async (req, res, next) => {
 
 export const updatePlaylistHandler = async (req, res, next) => {
   try {
-    const { name, description, is_public, isPublic } = req.body;
+    const { name } = req.body;
     const playlist = await updatePlaylist(req.params.id, req.user.id, {
       name,
-      description,
-      isPublic: is_public ?? isPublic,
     });
     return successResponse(res, playlist);
   } catch (error) {

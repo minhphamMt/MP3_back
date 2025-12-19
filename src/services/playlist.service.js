@@ -8,10 +8,13 @@ const createError = (status, message) => {
 
 const sanitizePlaylist = (playlist) => {
   if (!playlist) return null;
-  return {
-    ...playlist,
-    is_public: Boolean(playlist.is_public),
-  };
+  const normalized = { ...playlist };
+
+  if (playlist.is_system !== undefined) {
+    normalized.is_system = Boolean(playlist.is_system);
+  }
+
+  return normalized;
 };
 
 const ensurePlaylistOwner = async (playlistId, userId) => {
@@ -24,7 +27,9 @@ const ensurePlaylistOwner = async (playlistId, userId) => {
   if (!playlist) {
     throw createError(404, "Playlist not found");
   }
-
+  if (playlist.is_system) {
+    throw createError(403, "System playlists cannot be modified");
+  }
   if (Number(playlist.user_id) !== Number(userId)) {
     throw createError(
       403,
@@ -45,7 +50,12 @@ const mapPlaylistSong = (row) => ({
 
 export const listPlaylists = async (userId) => {
   const [rows] = await db.query(
-    "SELECT * FROM playlists WHERE user_id = ? ORDER BY id DESC",
+    `
+    SELECT *
+    FROM playlists
+    WHERE user_id = ? OR is_system = 1
+    ORDER BY id DESC
+  `,
     [userId]
   );
   return rows.map(sanitizePlaylist);
@@ -84,30 +94,23 @@ export const getPlaylistById = async (id) => {
   };
 };
 
-export const createPlaylist = async (
-  userId,
-  { name, description = null, isPublic = true }
-) => {
+export const createPlaylist = async (userId, { name }) => {
   if (!name) {
     throw createError(400, "Playlist name is required");
   }
 
   const [result] = await db.query(
     `
-    INSERT INTO playlists (name, description, is_public, user_id)
-    VALUES (?, ?, ?, ?)
+   INSERT INTO playlists (name, user_id, is_system)
+    VALUES (?, ?, ?)
   `,
-    [name, description, isPublic ? 1 : 0, userId]
+    [name, userId, 0]
   );
 
   return getPlaylistById(result.insertId);
 };
 
-export const updatePlaylist = async (
-  playlistId,
-  userId,
-  { name, description, isPublic }
-) => {
+export const updatePlaylist = async (playlistId, userId, { name }) => {
   await ensurePlaylistOwner(playlistId, userId);
 
   const fields = [];
@@ -116,16 +119,6 @@ export const updatePlaylist = async (
   if (name !== undefined) {
     fields.push("name = ?");
     values.push(name);
-  }
-
-  if (description !== undefined) {
-    fields.push("description = ?");
-    values.push(description);
-  }
-
-  if (isPublic !== undefined) {
-    fields.push("is_public = ?");
-    values.push(isPublic ? 1 : 0);
   }
 
   if (fields.length === 0) {
