@@ -10,6 +10,7 @@ import searchRoutes from "./search.routes.js";
 import analyticsRoutes from "./analytics.routes.js";
 import adminRoutes from "./admin.routes.js";
 import uploadRoutes from "./upload.routes.js";
+import recommendationRoutes from "./recommendation.routes.js";
 
 const router = Router();
 
@@ -32,5 +33,6 @@ router.use("/search", searchRoutes);
 router.use("/analytics", analyticsRoutes);
 router.use("/admin", adminRoutes);
 router.use("/uploads", uploadRoutes);
+router.use("/recommendations", recommendationRoutes);
 
 export default router;

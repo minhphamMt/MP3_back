@@ -16,12 +16,12 @@ const buildKey = ({ resourceType, mediaType, fileName }) => {
 
 const buildPublicUrl = (key) => {
   if (storageConfig.cdnBaseUrl) {
-    return `${storageConfig.cdnBaseUrl.replace(/\\/$/, "")}/${key}`;
+    return `${storageConfig.cdnBaseUrl.replace(/\/$/, "")}/${key}`;
   }
 
   if (storageConfig.driver === "local") {
-    const normalizedBase = storageConfig.local.baseUrl.replace(/\\/$/, "");
-    return `${normalizedBase}/${key}`.replace(/\\+/g, "/");
+    const normalizedBase = storageConfig.local.baseUrl.replace(/\/$/, "");
+    return `${normalizedBase}/${key}`.replace(/\/+/g, "/");
   }
 
   if (storageConfig.driver === "s3") {
