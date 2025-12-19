@@ -223,9 +223,77 @@ export const updateAlbumCover = async (albumId, coverUrl) => {
 
   return getAlbumById(albumId);
 };
+export const createAlbum = async ({
+  title,
+  artist_id,
+  release_date,
+  cover_url,
+  zing_album_id,
+}) => {
+  if (!title) {
+    throw createError(400, "title is required");
+  }
+
+  const [result] = await db.query(
+    `
+    INSERT INTO albums (title, artist_id, release_date, cover_url, zing_album_id)
+    VALUES (?, ?, ?, ?, ?)
+  `,
+    [
+      title,
+      artist_id || null,
+      release_date || null,
+      cover_url || null,
+      zing_album_id || null,
+    ]
+  );
+
+  return getAlbumById(result.insertId);
+};
+
+export const updateAlbum = async (
+  id,
+  { title, artist_id, release_date, cover_url, zing_album_id }
+) => {
+  const [existing] = await db.query("SELECT * FROM albums WHERE id = ?", [id]);
+  if (!existing[0]) {
+    throw createError(404, "Album not found");
+  }
+
+  const fields = [];
+  const values = [];
+  const payload = { title, artist_id, release_date, cover_url, zing_album_id };
+
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value !== undefined) {
+      fields.push(`${key} = ?`);
+      values.push(value);
+    }
+  });
+
+  if (fields.length) {
+    values.push(id);
+    await db.query(
+      `UPDATE albums SET ${fields.join(", ")} WHERE id = ?`,
+      values
+    );
+  }
+
+  return getAlbumById(id);
+};
+
+export const deleteAlbum = async (id) => {
+  const [result] = await db.query("DELETE FROM albums WHERE id = ?", [id]);
+  if (!result.affectedRows) {
+    throw createError(404, "Album not found");
+  }
+};
 
 export default {
   listAlbums,
   getAlbumById,
   updateAlbumCover,
+  createAlbum,
+  updateAlbum,
+  deleteAlbum,
 };

@@ -22,7 +22,68 @@ const normalizeGenres = (genres) => {
 
 const parseGenreString = (genreString) =>
   genreString ? genreString.split(",").filter(Boolean) : [];
+const normalizeGenreInput = (genres) => {
+  if (!genres) return [];
+  const list = Array.isArray(genres)
+    ? genres
+    : String(genres)
+        .split(",")
+        .map((item) => item.trim());
 
+  return [...new Set(list.filter(Boolean))];
+};
+
+const ensureGenreIds = async (genres = []) => {
+  if (!genres.length) return [];
+
+  const names = normalizeGenreInput(genres);
+  if (!names.length) return [];
+
+  const placeholders = names.map(() => "?").join(",");
+  const [existingRows] = await db.query(
+    `SELECT id, name FROM genres WHERE name IN (${placeholders})`,
+    names
+  );
+
+  const existingMap = new Map(existingRows.map((row) => [row.name, row.id]));
+  const missingNames = names.filter((name) => !existingMap.has(name));
+
+  for (const name of missingNames) {
+    const [result] = await db.query("INSERT INTO genres (name) VALUES (?)", [
+      name,
+    ]);
+    existingMap.set(name, result.insertId);
+  }
+
+  return names.map((name) => existingMap.get(name)).filter(Boolean);
+};
+
+const syncSongGenres = async (songId, genres = []) => {
+  const genreIds = await ensureGenreIds(genres);
+
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.query("DELETE FROM song_genres WHERE song_id = ?", [
+      songId,
+    ]);
+
+    if (genreIds.length) {
+      const values = genreIds.map((genreId) => [songId, genreId]);
+      await connection.query(
+        "INSERT INTO song_genres (song_id, genre_id) VALUES ?",
+        [values]
+      );
+    }
+
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
 const getSongLikesCount = async (songId) => {
   const [rows] = await db.query(
     "SELECT COUNT(*) AS likes FROM song_likes WHERE song_id = ?",
@@ -100,7 +161,7 @@ export const reviewSong = async (
   await db.query(
     `
     UPDATE songs
-    SET status = ?, reviewed_by = ?, reject_reason = ?
+     SET status = ?, reviewed_by = ?, reject_reason = ?, reviewed_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `,
     [
@@ -292,7 +353,7 @@ export const unlikeSong = async (songId, userId) => {
   return getSongEngagement(songId);
 };
 
-export const recordSongPlay = async (songId, userId) => {
+export const recordSongPlay = async (songId, userId, duration = null) => {
   const [result] = await db.query(
     "UPDATE songs SET play_count = play_count + 1 WHERE id = ?",
     [songId]
@@ -303,7 +364,7 @@ export const recordSongPlay = async (songId, userId) => {
   }
 
   if (userId) {
-    await recordListeningHistory(userId, songId);
+    await recordListeningHistory(userId, songId, duration);
   }
 
   return getSongEngagement(songId);
@@ -323,6 +384,127 @@ export const incrementPlayCount = async (songId) => {
 };
 
 export const getSongStats = async (songId) => getSongEngagement(songId);
+export const createSong = async ({
+  title,
+  artist_id,
+  album_id,
+  duration,
+  audio_path,
+  cover_url,
+  status = SONG_STATUS.APPROVED,
+  release_date,
+  genres = [],
+  zing_song_id,
+}) => {
+  if (!title) {
+    throw createError(400, "title is required");
+  }
+
+  const allowedStatuses = Object.values(SONG_STATUS);
+  if (status && !allowedStatuses.includes(status)) {
+    throw createError(400, "Invalid status");
+  }
+
+  const [result] = await db.query(
+    `
+    INSERT INTO songs (
+      title,
+      artist_id,
+      album_id,
+      duration,
+      audio_path,
+      cover_url,
+      status,
+      release_date,
+      zing_song_id
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `,
+    [
+      title,
+      artist_id || null,
+      album_id || null,
+      duration || null,
+      audio_path || null,
+      cover_url || null,
+      status,
+      release_date || null,
+      zing_song_id || null,
+    ]
+  );
+
+  await syncSongGenres(result.insertId, genres);
+  return getSongById(result.insertId);
+};
+
+export const updateSong = async (
+  id,
+  {
+    title,
+    artist_id,
+    album_id,
+    duration,
+    audio_path,
+    cover_url,
+    status,
+    release_date,
+    genres,
+    zing_song_id,
+  }
+) => {
+  const [existing] = await db.query("SELECT * FROM songs WHERE id = ?", [id]);
+  if (!existing[0]) {
+    throw createError(404, "Song not found");
+  }
+
+  const allowedStatuses = Object.values(SONG_STATUS);
+  if (status && !allowedStatuses.includes(status)) {
+    throw createError(400, "Invalid status");
+  }
+
+  const fields = [];
+  const values = [];
+
+  const updatable = {
+    title,
+    artist_id,
+    album_id,
+    duration,
+    audio_path,
+    cover_url,
+    status,
+    release_date,
+    zing_song_id,
+  };
+
+  Object.entries(updatable).forEach(([key, value]) => {
+    if (value !== undefined) {
+      fields.push(`${key} = ?`);
+      values.push(value);
+    }
+  });
+
+  if (fields.length) {
+    values.push(id);
+    await db.query(
+      `UPDATE songs SET ${fields.join(", ")} WHERE id = ?`,
+      values
+    );
+  }
+
+  if (genres !== undefined) {
+    await syncSongGenres(id, genres);
+  }
+
+  return getSongById(id);
+};
+
+export const deleteSong = async (id) => {
+  const [result] = await db.query("DELETE FROM songs WHERE id = ?", [id]);
+  if (!result.affectedRows) {
+    throw createError(404, "Song not found");
+  }
+};
 export default {
   listSongs,
   getSongById,
@@ -333,4 +515,7 @@ export default {
   getSongStats,
   reviewSong,
   updateSongMedia,
+  createSong,
+  updateSong,
+  deleteSong,
 };

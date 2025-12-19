@@ -1,10 +1,13 @@
 import {
+  createSong,
+  deleteSong,
   getSongById,
   getSongStats,
   recordSongPlay,
   likeSong,
   listSongs,
   unlikeSong,
+  updateSong,
 } from "../services/song.service.js";
 import { getPaginationParams } from "../utils/pagination.js";
 import { errorResponse, successResponse } from "../utils/response.js";
@@ -79,7 +82,14 @@ export const recordPlay = async (req, res, next) => {
       return errorResponse(res, "Authentication required", 401);
     }
 
-    const stats = await recordSongPlay(req.params.id, req.user.id);
+    const duration = Number(req.body?.duration);
+    const normalizedDuration = Number.isFinite(duration) ? duration : null;
+
+    const stats = await recordSongPlay(
+      req.params.id,
+      req.user.id,
+      normalizedDuration
+    );
     return successResponse(res, stats);
   } catch (error) {
     return next(error);
@@ -94,6 +104,32 @@ export const getSongEngagement = async (req, res, next) => {
     return next(error);
   }
 };
+export const createSongHandler = async (req, res, next) => {
+  try {
+    const song = await createSong(req.body);
+    return successResponse(res, song, null, 201);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const updateSongHandler = async (req, res, next) => {
+  try {
+    const song = await updateSong(req.params.id, req.body);
+    return successResponse(res, song);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const deleteSongHandler = async (req, res, next) => {
+  try {
+    await deleteSong(req.params.id);
+    return successResponse(res, { message: "Song deleted" });
+  } catch (error) {
+    return next(error);
+  }
+};
 export default {
   getSongs,
   getSong,
@@ -101,4 +137,7 @@ export default {
   unlikeSongHandler,
   recordPlay,
   getSongEngagement,
+  createSongHandler,
+  updateSongHandler,
+  deleteSongHandler,
 };

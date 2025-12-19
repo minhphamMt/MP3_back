@@ -1,4 +1,10 @@
-import { getAlbumById, listAlbums } from "../services/album.service.js";
+import {
+  createAlbum,
+  deleteAlbum,
+  getAlbumById,
+  listAlbums,
+  updateAlbum,
+} from "../services/album.service.js";
 import { getPaginationParams } from "../utils/pagination.js";
 import { errorResponse, successResponse } from "../utils/response.js";
 
@@ -40,8 +46,36 @@ export const getAlbum = async (req, res, next) => {
     return next(error);
   }
 };
+export const createAlbumHandler = async (req, res, next) => {
+  try {
+    const album = await createAlbum(req.body);
+    return successResponse(res, album, null, 201);
+  } catch (error) {
+    return next(error);
+  }
+};
 
+export const updateAlbumHandler = async (req, res, next) => {
+  try {
+    const album = await updateAlbum(req.params.id, req.body);
+    return successResponse(res, album);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const deleteAlbumHandler = async (req, res, next) => {
+  try {
+    await deleteAlbum(req.params.id);
+    return successResponse(res, { message: "Album deleted" });
+  } catch (error) {
+    return next(error);
+  }
+};
 export default {
   getAlbums,
   getAlbum,
+  createAlbumHandler,
+  updateAlbumHandler,
+  deleteAlbumHandler,
 };

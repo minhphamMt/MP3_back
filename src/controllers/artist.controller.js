@@ -1,4 +1,10 @@
-import { getArtistById, listArtists } from "../services/artist.service.js";
+import {
+  createArtist,
+  deleteArtist,
+  getArtistById,
+  listArtists,
+  updateArtist,
+} from "../services/artist.service.js";
 import { getPaginationParams } from "../utils/pagination.js";
 import { errorResponse, successResponse } from "../utils/response.js";
 
@@ -39,8 +45,36 @@ export const getArtist = async (req, res, next) => {
     return next(error);
   }
 };
+export const createArtistHandler = async (req, res, next) => {
+  try {
+    const artist = await createArtist(req.body);
+    return successResponse(res, artist, null, 201);
+  } catch (error) {
+    return next(error);
+  }
+};
 
+export const updateArtistHandler = async (req, res, next) => {
+  try {
+    const artist = await updateArtist(req.params.id, req.body);
+    return successResponse(res, artist);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const deleteArtistHandler = async (req, res, next) => {
+  try {
+    await deleteArtist(req.params.id);
+    return successResponse(res, { message: "Artist deleted" });
+  } catch (error) {
+    return next(error);
+  }
+};
 export default {
   getArtists,
   getArtist,
+  createArtistHandler,
+  updateArtistHandler,
+  deleteArtistHandler,
 };

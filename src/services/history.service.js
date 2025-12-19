@@ -6,17 +6,21 @@ const createError = (status, message) => {
   return error;
 };
 
-export const recordListeningHistory = async (userId, songId) => {
+export const recordListeningHistory = async (
+  userId,
+  songId,
+  duration = null
+) => {
   if (!userId) {
     throw createError(400, "User is required to record listening history");
   }
 
   await db.query(
     `
-    INSERT INTO listening_history (user_id, song_id)
-    VALUES (?, ?)
+   INSERT INTO listening_history (user_id, song_id, duration)
+    VALUES (?, ?, ?)
   `,
-    [userId, songId]
+    [userId, songId, duration]
   );
 };
 

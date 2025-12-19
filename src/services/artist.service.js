@@ -11,7 +11,11 @@ const normalizeGenres = (genres) => {
 
   return [...new Set(list.filter(Boolean))];
 };
-
+const createError = (status, message) => {
+  const err = new Error(message);
+  err.status = status;
+  return err;
+};
 const parseGenreString = (genreString) =>
   genreString ? genreString.split(",").filter(Boolean) : [];
 
@@ -196,8 +200,118 @@ export const getArtistById = async (id, { status, genres = [] } = {}) => {
     genres: aggregatedGenres,
   };
 };
+export const createArtist = async ({
+  name,
+  alias,
+  bio,
+  short_bio,
+  avatar_url,
+  cover_url,
+  birthday,
+  realname,
+  national,
+  zing_artist_id,
+}) => {
+  if (!name) {
+    throw createError(400, "name is required");
+  }
 
+  const [result] = await db.query(
+    `
+    INSERT INTO artists (
+      name,
+      alias,
+      bio,
+      short_bio,
+      avatar_url,
+      cover_url,
+      birthday,
+      realname,
+      national,
+      zing_artist_id
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `,
+    [
+      name,
+      alias || null,
+      bio || null,
+      short_bio || null,
+      avatar_url || null,
+      cover_url || null,
+      birthday || null,
+      realname || null,
+      national || null,
+      zing_artist_id || null,
+    ]
+  );
+
+  return getArtistById(result.insertId);
+};
+
+export const updateArtist = async (
+  id,
+  {
+    name,
+    alias,
+    bio,
+    short_bio,
+    avatar_url,
+    cover_url,
+    birthday,
+    realname,
+    national,
+    zing_artist_id,
+  }
+) => {
+  const [existing] = await db.query("SELECT * FROM artists WHERE id = ?", [id]);
+  if (!existing[0]) {
+    throw createError(404, "Artist not found");
+  }
+
+  const fields = [];
+  const values = [];
+  const payload = {
+    name,
+    alias,
+    bio,
+    short_bio,
+    avatar_url,
+    cover_url,
+    birthday,
+    realname,
+    national,
+    zing_artist_id,
+  };
+
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value !== undefined) {
+      fields.push(`${key} = ?`);
+      values.push(value);
+    }
+  });
+
+  if (fields.length) {
+    values.push(id);
+    await db.query(
+      `UPDATE artists SET ${fields.join(", ")} WHERE id = ?`,
+      values
+    );
+  }
+
+  return getArtistById(id);
+};
+
+export const deleteArtist = async (id) => {
+  const [result] = await db.query("DELETE FROM artists WHERE id = ?", [id]);
+  if (!result.affectedRows) {
+    throw createError(404, "Artist not found");
+  }
+};
 export default {
   listArtists,
   getArtistById,
+  createArtist,
+  updateArtist,
+  deleteArtist,
 };
