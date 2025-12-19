@@ -1,10 +1,21 @@
 import path from "path";
 
+const isAbsolutePath = (inputPath) =>
+  path.isAbsolute(inputPath) || path.win32.isAbsolute(inputPath);
+
+const resolvePath = (inputPath) =>
+  isAbsolutePath(inputPath) ? inputPath : path.resolve(inputPath);
+
+const defaultLocalRoot =
+  process.platform === "win32"
+    ? "D:\\\\music_dump"
+    : path.resolve("/mnt/d/music_dump");
+
 const storageConfig = {
   driver: process.env.STORAGE_DRIVER || "local",
   cdnBaseUrl: process.env.STORAGE_CDN_BASE_URL || "",
   local: {
-    uploadDir: process.env.LOCAL_UPLOAD_DIR || path.resolve("uploads"),
+    uploadDir: resolvePath(process.env.LOCAL_UPLOAD_DIR || defaultLocalRoot),
     baseUrl: process.env.LOCAL_UPLOAD_BASE_URL || "/uploads",
   },
   s3: {
