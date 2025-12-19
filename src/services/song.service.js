@@ -1,4 +1,5 @@
 import db from "../config/db.js";
+import SONG_STATUS from "../constants/song-status.js";
 import { buildPaginationMeta } from "../utils/pagination.js";
 import { recordListeningHistory } from "./history.service.js";
 
@@ -49,6 +50,40 @@ const getSongEngagement = async (songId) => {
   return { playCount, likeCount };
 };
 
+export const reviewSong = async (
+  songId,
+  { status, reviewerId, rejectReason }
+) => {
+  const allowedStatuses = Object.values(SONG_STATUS);
+  if (!allowedStatuses.includes(status)) {
+    throw createError(400, "Invalid status");
+  }
+
+  if (status === SONG_STATUS.REJECTED && !rejectReason) {
+    throw createError(400, "reject_reason is required for rejected status");
+  }
+
+  const [songs] = await db.query("SELECT id FROM songs WHERE id = ?", [songId]);
+  if (!songs[0]) {
+    throw createError(404, "Song not found");
+  }
+
+  await db.query(
+    `
+    UPDATE songs
+    SET status = ?, reviewed_by = ?, reject_reason = ?
+    WHERE id = ?
+  `,
+    [
+      status,
+      reviewerId || null,
+      status === SONG_STATUS.REJECTED ? rejectReason || null : null,
+      songId,
+    ]
+  );
+
+  return getSongById(songId);
+};
 export const listSongs = async ({
   page,
   limit,
@@ -267,4 +302,5 @@ export default {
   recordSongPlay,
   incrementPlayCount,
   getSongStats,
+  reviewSong,
 };

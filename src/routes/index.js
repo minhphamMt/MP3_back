@@ -8,6 +8,7 @@ import songRoutes from "./song.routes.js";
 import playlistRoutes from "./playlist.routes.js";
 import searchRoutes from "./search.routes.js";
 import analyticsRoutes from "./analytics.routes.js";
+import adminRoutes from "./admin.routes.js";
 
 const router = Router();
 
@@ -28,5 +29,6 @@ router.use("/songs", songRoutes);
 router.use("/playlists", playlistRoutes);
 router.use("/search", searchRoutes);
 router.use("/analytics", analyticsRoutes);
+router.use("/admin", adminRoutes);
 
 export default router;
