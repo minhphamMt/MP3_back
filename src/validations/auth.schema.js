@@ -1,6 +1,6 @@
 export const registerSchema = {
   body: {
-    name: { type: "string", required: true, minLength: 2 },
+    display_name: { type: "string", required: true, minLength: 2 },
     email: { type: "string", required: true, format: "email" },
     password: { type: "string", required: true, minLength: 6 },
   },

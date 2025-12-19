@@ -11,26 +11,30 @@ const createError = (status, message) => {
 
 const sanitizeUser = (user) => {
   if (!user) return null;
-  const { password, ...rest } = user;
+  const { password, password_hash, ...rest } = user;
   return rest;
 };
 
 export const getAllUsers = async () => {
-  const [rows] = await db.query(
-    "SELECT id, name, email, role, is_active FROM users"
-  );
-  return rows;
+  const [rows] = await db.query("SELECT * FROM users");
+  return rows.map(sanitizeUser);
 };
 
 export const getUserById = async (id) => {
-  const [rows] = await db.query(
-    "SELECT id, name, email, role, is_active FROM users WHERE id = ?",
-    [id]
-  );
-  return rows[0];
+  const [rows] = await db.query("SELECT * FROM users WHERE id = ?", [id]);
+  return sanitizeUser(rows[0]);
 };
 
 export const updateUserProfile = async (id, data) => {
+  const displayNameUpdate = data.display_name ?? data.name;
+  const normalizedData = { ...data };
+
+  if (displayNameUpdate !== undefined) {
+    normalizedData.display_name = displayNameUpdate;
+  }
+
+  delete normalizedData.name;
+
   const [existingRows] = await db.query("SELECT * FROM users WHERE id = ?", [
     id,
   ]);
@@ -40,10 +44,14 @@ export const updateUserProfile = async (id, data) => {
     throw createError(404, "User not found");
   }
 
-  if (data.email && data.email !== existingUser.email) {
+  if (
+    normalizedData.email !== undefined &&
+    normalizedData.email !== existingUser.email &&
+    existingUser.email !== undefined
+  ) {
     const [emailRows] = await db.query(
       "SELECT id FROM users WHERE email = ? AND id <> ?",
-      [data.email, id]
+      [normalizedData.email, id]
     );
     if (emailRows.length > 0) {
       throw createError(409, "Email already in use");
@@ -53,20 +61,22 @@ export const updateUserProfile = async (id, data) => {
   const fields = [];
   const values = [];
 
-  if (data.name !== undefined) {
-    fields.push("name = ?");
-    values.push(data.name);
-  }
+  const immutableFields = new Set([
+    "id",
+    "password",
+    "password_hash",
+    "created_at",
+    "updated_at",
+  ]);
 
-  if (data.email !== undefined) {
-    fields.push("email = ?");
-    values.push(data.email);
-  }
+  Object.keys(existingUser).forEach((field) => {
+    if (immutableFields.has(field)) return;
 
-  if (data.role !== undefined) {
-    fields.push("role = ?");
-    values.push(data.role);
-  }
+    if (normalizedData[field] !== undefined) {
+      fields.push(`${field} = ?`);
+      values.push(normalizedData[field]);
+    }
+  });
 
   if (fields.length === 0) {
     return sanitizeUser(existingUser);
@@ -91,18 +101,18 @@ export const changePassword = async (id, oldPassword, newPassword) => {
     throw createError(404, "User not found");
   }
 
-  const isMatch = await bcrypt.compare(oldPassword, user.password);
+  const isMatch = await bcrypt.compare(oldPassword, user.password_hash);
   if (!isMatch) {
     throw createError(400, "Old password is incorrect");
   }
 
   const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
-  await db.query("UPDATE users SET password = ? WHERE id = ?", [
+  await db.query("UPDATE users SET password_hash = ? WHERE id = ?", [
     hashedPassword,
     id,
   ]);
 
-  return sanitizeUser({ ...user, password: undefined });
+  return sanitizeUser({ ...user, password_hash: undefined });
 };
 
 export const setActiveStatus = async (id, isActive) => {

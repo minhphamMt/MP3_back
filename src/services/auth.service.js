@@ -7,7 +7,7 @@ const SALT_ROUNDS = 10;
 
 const sanitizeUser = (user) => {
   if (!user) return null;
-  const { password, ...rest } = user;
+  const { password, password_hash, ...rest } = user;
   return rest;
 };
 
@@ -42,7 +42,13 @@ const generateTokens = (user) => {
   return { accessToken, refreshToken };
 };
 
-export const registerUser = async ({ name, email, password }) => {
+export const registerUser = async ({ display_name, name, email, password }) => {
+  const displayName = display_name ?? name;
+
+  if (!displayName) {
+    throw createError(400, "display_name is required");
+  }
+
   const [existing] = await db.query("SELECT id FROM users WHERE email = ?", [
     email,
   ]);
@@ -52,13 +58,13 @@ export const registerUser = async ({ name, email, password }) => {
 
   const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
   const [result] = await db.query(
-    "INSERT INTO users (name, email, password, role, is_active) VALUES (?, ?, ?, ?, ?)",
-    [name, email, hashedPassword, ROLES.USER, 1]
+    "INSERT INTO users (display_name, email, password_hash, role, is_active) VALUES (?, ?, ?, ?, ?)",
+    [displayName, email, hashedPassword, ROLES.USER, 1]
   );
 
   const user = {
     id: result.insertId,
-    name,
+    display_name: displayName,
     email,
     role: ROLES.USER,
     is_active: 1,
@@ -80,7 +86,7 @@ export const loginUser = async ({ email, password }) => {
     throw createError(403, "Account is disabled");
   }
 
-  const isMatch = await bcrypt.compare(password, user.password);
+  const isMatch = await bcrypt.compare(password, user.password_hash);
   if (!isMatch) {
     throw createError(401, "Invalid credentials");
   }
