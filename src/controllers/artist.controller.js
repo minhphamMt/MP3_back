@@ -2,12 +2,14 @@ import {
   createArtist,
   deleteArtist,
   getArtistById,
+  getArtistByUserId,
   listArtists,
   updateArtist,
   listArtistCollections,
 } from "../services/artist.service.js";
 import { getPaginationParams } from "../utils/pagination.js";
 import { errorResponse, successResponse } from "../utils/response.js";
+import ROLES from "../constants/roles.js";
 
 const parseGenreQuery = (query) => query.genre || query.genres || [];
 
@@ -46,9 +48,41 @@ export const getArtist = async (req, res, next) => {
     return next(error);
   }
 };
+export const getMyArtistProfile = async (req, res, next) => {
+  try {
+    const artist = await getArtistByUserId(req.user.id);
+
+    if (!artist) {
+      return errorResponse(res, "Artist profile not found", 404);
+    }
+
+    const detailed = await getArtistById(artist.id, {
+      status: req.query.status,
+      genres: parseGenreQuery(req.query),
+    });
+
+    return successResponse(res, detailed);
+  } catch (error) {
+    return next(error);
+  }
+};
 export const createArtistHandler = async (req, res, next) => {
   try {
-    const artist = await createArtist(req.body);
+    if (req.body.zing_artist_id !== undefined) {
+      return errorResponse(res, "zing_artist_id cannot be set manually", 400);
+    }
+
+    const payload = { ...req.body };
+
+    if (req.user?.role === ROLES.ARTIST) {
+      const existing = await getArtistByUserId(req.user.id);
+      if (existing) {
+        return errorResponse(res, "Artist profile already exists", 409);
+      }
+      payload.user_id = req.user.id;
+    }
+
+    const artist = await createArtist(payload);
     return successResponse(res, artist, null, 201);
   } catch (error) {
     return next(error);
@@ -57,6 +91,17 @@ export const createArtistHandler = async (req, res, next) => {
 
 export const updateArtistHandler = async (req, res, next) => {
   try {
+    if (req.body.zing_artist_id !== undefined) {
+      return errorResponse(res, "zing_artist_id cannot be set manually", 400);
+    }
+
+    if (req.user?.role === ROLES.ARTIST) {
+      const artistProfile = await getArtistByUserId(req.user.id);
+      if (!artistProfile || Number(req.params.id) !== artistProfile.id) {
+        return errorResponse(res, "Forbidden", 403);
+      }
+    }
+
     const artist = await updateArtist(req.params.id, req.body);
     return successResponse(res, artist);
   } catch (error) {
@@ -66,6 +111,13 @@ export const updateArtistHandler = async (req, res, next) => {
 
 export const deleteArtistHandler = async (req, res, next) => {
   try {
+    if (req.user?.role === ROLES.ARTIST) {
+      const artistProfile = await getArtistByUserId(req.user.id);
+      if (!artistProfile || Number(req.params.id) !== artistProfile.id) {
+        return errorResponse(res, "Forbidden", 403);
+      }
+    }
+
     await deleteArtist(req.params.id);
     return successResponse(res, { message: "Artist deleted" });
   } catch (error) {
@@ -85,6 +137,7 @@ export const getArtistCollections = async (req, res, next) => {
 export default {
   getArtists,
   getArtist,
+  getMyArtistProfile,
   createArtistHandler,
   updateArtistHandler,
   deleteArtistHandler,

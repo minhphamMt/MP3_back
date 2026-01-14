@@ -13,6 +13,10 @@ import {
 } from "../services/song.service.js";
 import { getPaginationParams } from "../utils/pagination.js";
 import { errorResponse, successResponse } from "../utils/response.js";
+import ROLES from "../constants/roles.js";
+import SONG_STATUS from "../constants/song-status.js";
+import { getArtistByUserId } from "../services/artist.service.js";
+import { getAlbumById } from "../services/album.service.js";
 
 const parseGenreQuery = (query) => query.genre || query.genres || [];
 
@@ -109,7 +113,31 @@ export const getSongEngagement = async (req, res, next) => {
 };
 export const createSongHandler = async (req, res, next) => {
   try {
-    const song = await createSong(req.body);
+    const payload = { ...req.body };
+
+    if (req.user?.role === ROLES.ARTIST) {
+      const artist = await getArtistByUserId(req.user.id);
+      if (!artist) {
+        return errorResponse(res, "Artist profile not found", 403);
+      }
+
+      payload.artist_id = artist.id;
+      payload.status = SONG_STATUS.PENDING;
+
+      if (payload.album_id) {
+        const album = await getAlbumById(payload.album_id, {
+          includeSongs: false,
+        });
+        if (!album) {
+          return errorResponse(res, "Album not found", 404);
+        }
+        if (album.artist_id !== artist.id) {
+          return errorResponse(res, "Album does not belong to artist", 403);
+        }
+      }
+    }
+
+    const song = await createSong(payload);
     return successResponse(res, song, null, 201);
   } catch (error) {
     return next(error);
@@ -118,7 +146,39 @@ export const createSongHandler = async (req, res, next) => {
 
 export const updateSongHandler = async (req, res, next) => {
   try {
-    const song = await updateSong(req.params.id, req.body);
+    const payload = { ...req.body };
+
+    if (req.user?.role === ROLES.ARTIST) {
+      const artist = await getArtistByUserId(req.user.id);
+      if (!artist) {
+        return errorResponse(res, "Artist profile not found", 403);
+      }
+
+      const existingSong = await getSongById(req.params.id);
+      if (!existingSong) {
+        return errorResponse(res, "Song not found", 404);
+      }
+      if (existingSong.artist_id !== artist.id) {
+        return errorResponse(res, "Forbidden", 403);
+      }
+
+      delete payload.status;
+      delete payload.artist_id;
+
+      if (payload.album_id) {
+        const album = await getAlbumById(payload.album_id, {
+          includeSongs: false,
+        });
+        if (!album) {
+          return errorResponse(res, "Album not found", 404);
+        }
+        if (album.artist_id !== artist.id) {
+          return errorResponse(res, "Album does not belong to artist", 403);
+        }
+      }
+    }
+
+    const song = await updateSong(req.params.id, payload);
     return successResponse(res, song);
   } catch (error) {
     return next(error);
@@ -127,6 +187,21 @@ export const updateSongHandler = async (req, res, next) => {
 
 export const deleteSongHandler = async (req, res, next) => {
   try {
+    if (req.user?.role === ROLES.ARTIST) {
+      const artist = await getArtistByUserId(req.user.id);
+      if (!artist) {
+        return errorResponse(res, "Artist profile not found", 403);
+      }
+
+      const existingSong = await getSongById(req.params.id);
+      if (!existingSong) {
+        return errorResponse(res, "Song not found", 404);
+      }
+      if (existingSong.artist_id !== artist.id) {
+        return errorResponse(res, "Forbidden", 403);
+      }
+    }
+    
     await deleteSong(req.params.id);
     return successResponse(res, { message: "Song deleted" });
   } catch (error) {

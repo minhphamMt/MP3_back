@@ -1,5 +1,6 @@
 import db from "../config/db.js";
 import { buildPaginationMeta } from "../utils/pagination.js";
+import { generateZingId } from "../utils/zing-id.js";
 
 const normalizeGenres = (genres) => {
   if (!genres) return [];
@@ -18,6 +19,20 @@ const createError = (status, message) => {
 };
 const parseGenreString = (genreString) =>
   genreString ? genreString.split(",").filter(Boolean) : [];
+  const generateUniqueZingArtistId = async () => {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const candidate = generateZingId("zingArtist");
+    const [rows] = await db.query(
+      "SELECT id FROM artists WHERE zing_artist_id = ? LIMIT 1",
+      [candidate]
+    );
+    if (!rows[0]) {
+      return candidate;
+    }
+  }
+
+  throw createError(500, "Failed to generate zing_artist_id");
+};
 
 export const listArtists = async ({
   page,
@@ -200,6 +215,17 @@ export const getArtistById = async (id, { status, genres = [] } = {}) => {
     genres: aggregatedGenres,
   };
 };
+export const getArtistByUserId = async (userId) => {
+  if (!userId) return null;
+  const [rows] = await db.query(
+    `
+    SELECT * FROM artists WHERE user_id = ? LIMIT 1;
+  `,
+    [userId]
+  );
+
+  return rows[0] || null;
+};
 export const createArtist = async ({
   name,
   alias,
@@ -211,14 +237,33 @@ export const createArtist = async ({
   realname,
   national,
   zing_artist_id,
+  user_id,
 }) => {
   if (!name) {
     throw createError(400, "name is required");
   }
 
+  if (zing_artist_id) {
+    throw createError(400, "zing_artist_id cannot be set manually");
+  }
+
+  if (user_id) {
+    const [existingRows] = await db.query(
+      "SELECT id FROM artists WHERE user_id = ? LIMIT 1",
+      [user_id]
+    );
+
+    if (existingRows[0]) {
+      throw createError(409, "Artist profile already exists for this user");
+    }
+  }
+
+  const generatedZingArtistId = await generateUniqueZingArtistId();
+
   const [result] = await db.query(
     `
     INSERT INTO artists (
+      user_id,
       name,
       alias,
       bio,
@@ -230,9 +275,10 @@ export const createArtist = async ({
       national,
       zing_artist_id
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
     [
+      user_id || null,
       name,
       alias || null,
       bio || null,
@@ -242,7 +288,7 @@ export const createArtist = async ({
       birthday || null,
       realname || null,
       national || null,
-      zing_artist_id || null,
+      generatedZingArtistId,
     ]
   );
 
@@ -269,6 +315,10 @@ export const updateArtist = async (
     throw createError(404, "Artist not found");
   }
 
+  if (zing_artist_id !== undefined) {
+    throw createError(400, "zing_artist_id cannot be updated manually");
+  }
+
   const fields = [];
   const values = [];
   const payload = {
@@ -281,7 +331,6 @@ export const updateArtist = async (
     birthday,
     realname,
     national,
-    zing_artist_id,
   };
 
   Object.entries(payload).forEach(([key, value]) => {
@@ -332,6 +381,7 @@ export const listArtistCollections = async (limit = 8) => {
 export default {
   listArtists,
   getArtistById,
+  getArtistByUserId,
   createArtist,
   updateArtist,
   deleteArtist,

@@ -9,6 +9,7 @@ const router = Router();
 //Public routes
 router.get("/", artistController.getArtists);
 router.get("/collections", artistController.getArtistCollections);
+router.get("/me", authMiddleware, artistController.getMyArtistProfile);
 router.get("/:id", artistController.getArtist);
 //User routes
 router.post(

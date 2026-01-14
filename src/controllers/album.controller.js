@@ -11,6 +11,8 @@ import {
   likeAlbum,
   unlikeAlbum,
 } from "../services/album-like.service.js";
+import ROLES from "../constants/roles.js";
+import { getArtistByUserId } from "../services/artist.service.js";
 const parseGenreQuery = (query) => query.genre || query.genres || [];
 
 export const getAlbums = async (req, res, next) => {
@@ -62,7 +64,18 @@ export const getAlbum = async (req, res, next) => {
 };
 export const createAlbumHandler = async (req, res, next) => {
   try {
-    const album = await createAlbum(req.body);
+     const payload = { ...req.body };
+
+    if (req.user?.role === ROLES.ARTIST) {
+      const artist = await getArtistByUserId(req.user.id);
+      if (!artist) {
+        return errorResponse(res, "Artist profile not found", 403);
+      }
+
+      payload.artist_id = artist.id;
+    }
+
+    const album = await createAlbum(payload);
     return successResponse(res, album, null, 201);
   } catch (error) {
     return next(error);
@@ -71,7 +84,28 @@ export const createAlbumHandler = async (req, res, next) => {
 
 export const updateAlbumHandler = async (req, res, next) => {
   try {
-    const album = await updateAlbum(req.params.id, req.body);
+    const payload = { ...req.body };
+
+    if (req.user?.role === ROLES.ARTIST) {
+      const artist = await getArtistByUserId(req.user.id);
+      if (!artist) {
+        return errorResponse(res, "Artist profile not found", 403);
+      }
+
+      const existingAlbum = await getAlbumById(req.params.id, {
+        includeSongs: false,
+      });
+      if (!existingAlbum) {
+        return errorResponse(res, "Album not found", 404);
+      }
+      if (existingAlbum.artist_id !== artist.id) {
+        return errorResponse(res, "Forbidden", 403);
+      }
+
+      delete payload.artist_id;
+    }
+
+    const album = await updateAlbum(req.params.id, payload);
     return successResponse(res, album);
   } catch (error) {
     return next(error);
@@ -80,6 +114,22 @@ export const updateAlbumHandler = async (req, res, next) => {
 
 export const deleteAlbumHandler = async (req, res, next) => {
   try {
+     if (req.user?.role === ROLES.ARTIST) {
+      const artist = await getArtistByUserId(req.user.id);
+      if (!artist) {
+        return errorResponse(res, "Artist profile not found", 403);
+      }
+
+      const existingAlbum = await getAlbumById(req.params.id, {
+        includeSongs: false,
+      });
+      if (!existingAlbum) {
+        return errorResponse(res, "Album not found", 404);
+      }
+      if (existingAlbum.artist_id !== artist.id) {
+        return errorResponse(res, "Forbidden", 403);
+      }
+    }
     await deleteAlbum(req.params.id);
     return successResponse(res, { message: "Album deleted" });
   } catch (error) {
