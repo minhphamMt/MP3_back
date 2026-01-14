@@ -4,6 +4,7 @@ import authMiddleware from "../middlewares/auth.middleware.js";
 import rbacMiddleware from "../middlewares/rbac.middleware.js";
 import ROLES from "../constants/roles.js";
 import { getLikedSongss } from "../controllers/song.controller.js";
+import { uploadSongAudio as uploadSongAudioFile } from "../middlewares/upload.middleware.js";
 const router = Router();
 
 router.get("/", songController.getSongs);
@@ -22,6 +23,13 @@ router.put(
   authMiddleware,
   rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
   songController.updateSongHandler
+);
+router.post(
+  "/:id/audio",
+  authMiddleware,
+  rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
+  uploadSongAudioFile,
+  songController.uploadSongAudio
 );
 router.delete(
   "/:id",

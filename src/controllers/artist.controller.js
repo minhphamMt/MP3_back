@@ -134,6 +134,32 @@ export const getArtistCollections = async (req, res, next) => {
   }
 };
 
+export const uploadArtistAvatar = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+
+    const artist = await getArtistByUserId(req.user.id);
+    if (!artist) {
+      return errorResponse(res, "Artist profile not found", 404);
+    }
+
+    const avatarUrl = `/uploads/images/${req.file.filename}`;
+    const updatedArtist = await updateArtist(artist.id, {
+      avatar_url: avatarUrl,
+    });
+
+    return res.json({
+      message: "Artist avatar uploaded successfully",
+      avatar_url: avatarUrl,
+      artist: updatedArtist,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 export default {
   getArtists,
   getArtist,
@@ -142,4 +168,5 @@ export default {
   updateArtistHandler,
   deleteArtistHandler,
   getArtistCollections,
+  uploadArtistAvatar,
 };

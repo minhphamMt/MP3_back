@@ -8,6 +8,7 @@ import {
   listSongs,
   unlikeSong,
   updateSong,
+  updateSongMedia,
   listSongsByArtist,
   getLikedSongs
 } from "../services/song.service.js";
@@ -185,6 +186,40 @@ export const updateSongHandler = async (req, res, next) => {
   }
 };
 
+export const uploadSongAudio = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+
+    if (req.user?.role === ROLES.ARTIST) {
+      const artist = await getArtistByUserId(req.user.id);
+      if (!artist) {
+        return errorResponse(res, "Artist profile not found", 403);
+      }
+
+      const existingSong = await getSongById(req.params.id);
+      if (!existingSong) {
+        return errorResponse(res, "Song not found", 404);
+      }
+      if (existingSong.artist_id !== artist.id) {
+        return errorResponse(res, "Forbidden", 403);
+      }
+    }
+
+    const audioPath = `/uploads/music/${req.file.filename}`;
+    const song = await updateSongMedia(req.params.id, { audioPath });
+
+    return res.json({
+      message: "Song audio uploaded successfully",
+      audio_path: audioPath,
+      song,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 export const deleteSongHandler = async (req, res, next) => {
   try {
     if (req.user?.role === ROLES.ARTIST) {
@@ -201,7 +236,7 @@ export const deleteSongHandler = async (req, res, next) => {
         return errorResponse(res, "Forbidden", 403);
       }
     }
-    
+
     await deleteSong(req.params.id);
     return successResponse(res, { message: "Song deleted" });
   } catch (error) {
@@ -247,6 +282,7 @@ export default {
   getSongEngagement,
   createSongHandler,
   updateSongHandler,
+  uploadSongAudio,
   deleteSongHandler,
   getSongsByArtist,
   getLikedSongss
