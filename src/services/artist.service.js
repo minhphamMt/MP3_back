@@ -308,10 +308,32 @@ export const deleteArtist = async (id) => {
     throw createError(404, "Artist not found");
   }
 };
+export const listArtistCollections = async (limit = 8) => {
+  const [rows] = await db.query(
+    `
+    SELECT
+      a.id AS artist_id,
+      a.name AS artist_name,
+      a.avatar_url AS cover_url,
+      COUNT(s.id) AS song_count
+    FROM artists a
+    JOIN songs s ON s.artist_id = a.id
+    WHERE s.status = 'approved'
+    GROUP BY a.id
+    ORDER BY song_count DESC
+    LIMIT ?
+  `,
+    [limit]
+  );
+
+  return rows;
+};
+
 export default {
   listArtists,
   getArtistById,
   createArtist,
   updateArtist,
   deleteArtist,
+  listArtistCollections,
 };

@@ -12,7 +12,8 @@ import adminRoutes from "./admin.routes.js";
 import uploadRoutes from "./upload.routes.js";
 import recommendationRoutes from "./recommendation.routes.js";
 import { errorResponse, successResponse } from "../utils/response.js";
-
+import historyRoutes from "./history.routes.js";
+import chartRoutes from "./chart.routes.js";
 const router = Router();
 
 router.get("/health", async (req, res, next) => {
@@ -42,6 +43,8 @@ const routeMappings = [
   { path: "/admin", handler: adminRoutes },
   { path: "/uploads", handler: uploadRoutes },
   { path: "/recommendations", handler: recommendationRoutes },
+  { path: "/history", handler: historyRoutes },
+   { path: "/charts", handler: chartRoutes },
 ];
 
 routeMappings.forEach(({ path, handler }) => {

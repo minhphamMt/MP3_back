@@ -4,6 +4,7 @@ import {
   getArtistById,
   listArtists,
   updateArtist,
+  listArtistCollections,
 } from "../services/artist.service.js";
 import { getPaginationParams } from "../utils/pagination.js";
 import { errorResponse, successResponse } from "../utils/response.js";
@@ -71,10 +72,21 @@ export const deleteArtistHandler = async (req, res, next) => {
     return next(error);
   }
 };
+export const getArtistCollections = async (req, res, next) => {
+  try {
+    const limit = Number(req.query.limit) || 8;
+    const data = await listArtistCollections(limit);
+    return successResponse(res, data);
+  } catch (err) {
+    next(err);
+  }
+};
+
 export default {
   getArtists,
   getArtist,
   createArtistHandler,
   updateArtistHandler,
   deleteArtistHandler,
+  getArtistCollections,
 };

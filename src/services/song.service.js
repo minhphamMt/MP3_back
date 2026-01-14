@@ -352,8 +352,44 @@ export const unlikeSong = async (songId, userId) => {
 
   return getSongEngagement(songId);
 };
+const MIN_INTERVAL_SECONDS = 300; // 5 phút
 
+const hasRecentListening = async (userId, songId) => {
+  const [rows] = await db.query(
+    `
+    SELECT 1
+    FROM listening_history
+    WHERE user_id = ?
+      AND song_id = ?
+      AND listened_at >= NOW() - INTERVAL ? SECOND
+    LIMIT 1
+    `,
+    [userId, songId, MIN_INTERVAL_SECONDS]
+  );
+
+  return Boolean(rows[0]);
+};
+
+const getWeekStartDate = () => {
+  return `
+    DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
+  `;
+};
 export const recordSongPlay = async (songId, userId, duration = null) => {
+  // 1️⃣ phải nghe thật ≥ 30s
+  if (!Number.isFinite(duration) || duration < 30) {
+    return getSongEngagement(songId);
+  }
+
+  // 2️⃣ chống spam: đã nghe trong 5 phút gần nhất?
+  if (userId) {
+    const alreadyCounted = await hasRecentListening(userId, songId);
+    if (alreadyCounted) {
+      return getSongEngagement(songId);
+    }
+  }
+
+  // 3️⃣ tăng play_count (tổng)
   const [result] = await db.query(
     "UPDATE songs SET play_count = play_count + 1 WHERE id = ?",
     [songId]
@@ -363,12 +399,42 @@ export const recordSongPlay = async (songId, userId, duration = null) => {
     throw createError(404, "Song not found");
   }
 
+  // 4️⃣ lưu history
   if (userId) {
     await recordListeningHistory(userId, songId, duration);
   }
 
+
+  await db.query(
+    `
+    INSERT INTO song_play_stats (song_id, period_type, period_start, play_count)
+    VALUES (?, 'day', CURDATE(), 1)
+    ON DUPLICATE KEY UPDATE play_count = play_count + 1
+    `,
+    [songId]
+  );
+
+
+  await db.query(
+    `
+    INSERT INTO song_play_stats (song_id, period_type, period_start, play_count)
+    VALUES (
+      ?, 
+      'week', 
+      DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY),
+      1
+    )
+    ON DUPLICATE KEY UPDATE play_count = play_count + 1
+    `,
+    [songId]
+  );
+
   return getSongEngagement(songId);
 };
+
+
+
+
 
 export const incrementPlayCount = async (songId) => {
   const [result] = await db.query(
@@ -505,6 +571,111 @@ export const deleteSong = async (id) => {
     throw createError(404, "Song not found");
   }
 };
+export const listSongsByArtist = async (artistId) => {
+  // 1. Lấy thông tin nghệ sĩ
+  const [artistRows] = await db.query(
+    `
+    SELECT
+      id,
+      name,
+      alias,
+      bio,
+      short_bio,
+      avatar_url,
+      cover_url,
+      birthday,
+      realname,
+      national
+    FROM artists
+    WHERE id = ?
+    LIMIT 1
+    `,
+    [artistId]
+  );
+
+  if (!artistRows[0]) {
+    throw new Error("Artist not found");
+  }
+
+  // 2. Lấy danh sách bài hát
+  const [songRows] = await db.query(
+    `
+    SELECT
+      s.id,
+      s.title,
+      s.duration,
+      s.audio_path,
+      s.cover_url,
+      s.album_id,
+      al.title AS album_title
+    FROM songs s
+    LEFT JOIN albums al ON s.album_id = al.id
+    WHERE s.artist_id = ?
+      AND s.status = 'approved'
+      AND s.audio_path IS NOT NULL
+    ORDER BY s.release_date DESC
+    `,
+    [artistId]
+  );
+
+  return {
+    artist: artistRows[0],
+    songs: songRows,
+  };
+};
+
+export const getLikedSongsByUser = async (userId) => {
+  const [rows] = await db.query(
+    `
+    SELECT s.id
+    FROM song_likes ls
+    JOIN songs s ON s.id = ls.song_id
+    WHERE ls.user_id = ?
+  `,
+    [userId]
+  );
+
+  return rows;
+};
+
+export const getLikedSongs= async (userId) => {
+  const [rows] = await db.query(
+    `
+    SELECT
+      s.id,
+      s.title,
+      s.duration,
+      s.audio_path,
+      s.cover_url,
+      s.artist_id,
+      ar.name AS artist_name,
+      s.album_id,
+      al.title AS album_title,
+      sl.liked_at
+    FROM song_likes sl
+    JOIN songs s ON s.id = sl.song_id
+    LEFT JOIN artists ar ON ar.id = s.artist_id
+    LEFT JOIN albums al ON al.id = s.album_id
+    WHERE sl.user_id = ?
+    ORDER BY sl.liked_at DESC
+    `,
+    [userId]
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    duration: row.duration,
+    audio_url: row.audio_path,
+    cover_url: row.cover_url,
+    artist_id: row.artist_id,
+    artist_name: row.artist_name,
+    album_id: row.album_id,
+    album_title: row.album_title,
+    liked_at: row.liked_at,
+  }));
+};
+
 export default {
   listSongs,
   getSongById,
@@ -518,4 +689,7 @@ export default {
   createSong,
   updateSong,
   deleteSong,
+  listSongsByArtist,
+  getLikedSongsByUser,
+  getLikedSongs
 };

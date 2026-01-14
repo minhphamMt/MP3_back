@@ -25,96 +25,49 @@ export const listAlbums = async ({
   page,
   limit,
   offset,
-  artistId,
-  genres = [],
   status,
+  artistId,
+  genres,
+  sort = "release_date",
+  order = "desc",
 }) => {
-  const filters = [];
+  const allowedSort = {
+    release_date: "a.release_date",
+    created_at: "a.created_at",
+    title: "a.title",
+  };
+
+  const sortColumn = allowedSort[sort] || allowedSort.release_date;
+  const sortOrder = order.toUpperCase() === "ASC" ? "ASC" : "DESC";
+
+  let where = "WHERE 1=1";
   const params = [];
-  const normalizedGenres = normalizeGenres(genres);
+
+  if (status) {
+    where += " AND a.status = ?";
+    params.push(status);
+  }
 
   if (artistId) {
-    filters.push("al.artist_id = ?");
+    where += " AND a.artist_id = ?";
     params.push(artistId);
   }
 
-  if (status || normalizedGenres.length > 0) {
-    const songFilters = ["s.album_id = al.id"];
-    const songParams = [];
+  const sql = `
+    SELECT a.*
+    FROM albums a
+    ${where}
+    ORDER BY ${sortColumn} ${sortOrder}
+    LIMIT ? OFFSET ?
+  `;
 
-    if (status) {
-      songFilters.push("s.status = ?");
-      songParams.push(status);
-    }
+  params.push(limit, offset);
 
-    if (normalizedGenres.length > 0) {
-      const placeholders = normalizedGenres.map(() => "?").join(",");
-      songFilters.push(`g.name IN (${placeholders})`);
-      songParams.push(...normalizedGenres);
-    }
-
-    filters.push(
-      `EXISTS (
-        SELECT 1
-        FROM songs s
-        LEFT JOIN song_genres sg ON sg.song_id = s.id
-        LEFT JOIN genres g ON g.id = sg.genre_id
-        WHERE ${songFilters.join(" AND ")}
-      )`
-    );
-    params.push(...songParams);
-  }
-
-  const whereClause = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
-
-  const [countRows] = await db.query(
-    `SELECT COUNT(*) as total FROM albums al ${whereClause}`,
-    params
-  );
-  const total = countRows[0]?.total || 0;
-
-  const dataParams = [];
-  if (status) {
-    dataParams.push(status);
-  }
-  if (status) {
-    dataParams.push(status);
-  }
-  dataParams.push(...params, limit, offset);
-
-  const [rows] = await db.query(
-    `
-    SELECT
-      al.*,
-      ar.name AS artist_name,
-      (SELECT COUNT(*)
-        FROM songs s
-        WHERE s.album_id = al.id ${
-          status ? "AND s.status = ?" : ""
-        }) AS song_count,
-      (SELECT GROUP_CONCAT(DISTINCT g.name)
-        FROM songs s
-        JOIN song_genres sg ON sg.song_id = s.id
-        JOIN genres g ON g.id = sg.genre_id
-        WHERE s.album_id = al.id ${status ? "AND s.status = ?" : ""}) AS genres
-    FROM albums al
-    LEFT JOIN artists ar ON ar.id = al.artist_id
-    ${whereClause}
-    ORDER BY al.id DESC
-    LIMIT ? OFFSET ?;
-  `,
-    dataParams
-  );
-
-  const items = rows.map((row) => ({
-    ...row,
-    artist: row.artist_id ? { id: row.artist_id, name: row.artist_name } : null,
-    genres: parseGenreString(row.genres),
-  }));
+  const [rows] = await db.query(sql, params);
 
   return {
-    items,
-    meta: buildPaginationMeta(page, limit, total),
+    items: rows,
+    meta: { page, limit },
   };
 };
 

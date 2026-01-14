@@ -6,7 +6,9 @@ import {
   changePassword,
   setActiveStatus,
 } from "../services/user.service.js";
-
+import { getLikedSongsByUser } from "../services/song.service.js";
+import { successResponse } from "../utils/response.js";
+import { getLikedAlbums } from "../services/album-like.service.js";
 export const getCurrentUser = async (req, res, next) => {
   try {
     const user = await getUserById(req.user.id);
@@ -89,6 +91,47 @@ export const toggleActive = async (req, res, next) => {
     return next(error);
   }
 };
+export const getMyLikedSongs = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    const songs = await getLikedSongsByUser(userId);
+
+    return successResponse(res, songs);
+  } catch (err) {
+    next(err);
+  }
+};
+export const getMyLikedAlbums = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const albums = await getLikedAlbums(userId);
+    return successResponse(res, albums);
+  } catch (error) {
+    next(error);
+  }
+};
+export const uploadAvatar = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+
+    const avatarUrl = `/uploads/user/avatar/${req.file.filename}`;
+
+    const user = await updateUserProfile(req.user.id, {
+      avatar_url: avatarUrl,
+    });
+
+    return res.json({
+      message: "Avatar uploaded successfully",
+      avatar_url: avatarUrl,
+      user,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
 
 export default {
   getCurrentUser,
@@ -99,4 +142,7 @@ export default {
   removeUser,
   updatePassword,
   toggleActive,
+  getMyLikedSongs,
+  getMyLikedAlbums,
+  uploadAvatar
 };

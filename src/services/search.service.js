@@ -11,148 +11,168 @@ const highlightText = (text, keyword) => {
   const regex = new RegExp(`(${safeKeyword})`, "gi");
   return text.replace(regex, "<em>$1</em>");
 };
+const mapHighlightedFields = (row, keyword) => {
+  const highlight = {};
 
-const mapHighlightedFields = (row, keyword) => ({
-  ...row,
-  highlight: {
-    display_name: highlightText(row.display_name, keyword),
-    zing_song_id: highlightText(row.zing_song_id, keyword),
-    zing_artist_id: highlightText(row.zing_artist_id, keyword),
-    zing_album_id: highlightText(row.zing_album_id, keyword),
-    artist_name: highlightText(row.artist_name, keyword),
-    album_title: highlightText(row.album_title, keyword),
-  },
-});
-
-export const searchEntities = async (keyword, { page, limit, offset }) => {
-  const trimmedKeyword = keyword.trim();
-  const wildcard = `%${trimmedKeyword}%`;
-
-  const [countRows] = await db.query(
-    `
-    SELECT COUNT(*) AS total FROM (
-      SELECT s.id
-      FROM songs s
-      WHERE s.title LIKE ? OR s.zing_song_id LIKE ?
-      UNION ALL
-      SELECT ar.id
-      FROM artists ar
-      WHERE ar.name LIKE ? OR ar.zing_artist_id LIKE ?
-      UNION ALL
-      SELECT al.id
-      FROM albums al
-      WHERE al.title LIKE ? OR al.zing_album_id LIKE ?
-    ) AS combined;
-  `,
-    [wildcard, wildcard, wildcard, wildcard, wildcard, wildcard]
-  );
-
-  const total = countRows[0]?.total || 0;
-
-  if (!total) {
-    return {
-      items: [],
-      meta: buildPaginationMeta(page, limit, total),
-    };
+  if (row.display_name) {
+    highlight.display_name = highlightText(row.display_name, keyword);
   }
+
+  if (row.artist_name) {
+    highlight.artist_name = highlightText(row.artist_name, keyword);
+  }
+
+  if (row.album_title) {
+    highlight.album_title = highlightText(row.album_title, keyword);
+  }
+
+  return {
+    ...row,
+    highlight,
+  };
+};
+const searchSongs = async (keyword, { limit, offset, userId }) => {
+  const params = [
+    `${keyword}%`,
+    `%${keyword}%`,
+    `%${keyword}%`,
+    limit,
+    offset,
+  ];
 
   const [rows] = await db.query(
     `
-    SELECT *
-    FROM (
-      SELECT
-        s.id,
-        'song' AS type,
-        s.title AS display_name,
-       s.zing_song_id,
-        NULL AS zing_artist_id,
-        NULL AS zing_album_id,
-        ar.name AS artist_name,
-        al.title AS album_title,
-        CASE
-         WHEN s.zing_song_id = ? THEN 3
-          WHEN s.title LIKE ? THEN 1
-          ELSE 0
-        END AS relevance
-      FROM songs s
-      LEFT JOIN artists ar ON ar.id = s.artist_id
-      LEFT JOIN albums al ON al.id = s.album_id
-      WHERE s.title LIKE ? OR s.zing_song_id LIKE ?
+    SELECT
+      s.*,
+      (
+        (s.title LIKE ?) * 5 +
+        (s.title LIKE ?) * 3 +
+        (s.play_count * 0.001) +
+        ((SELECT COUNT(*) FROM song_likes sl WHERE sl.song_id = s.id) * 0.01)
+      ) AS score
+    FROM songs s
+    WHERE s.status = 'approved'
+      AND s.title LIKE ?
+    ORDER BY score DESC
+    LIMIT ? OFFSET ?
+    `,
+    params
+  );
 
-      UNION ALL
-
-      SELECT
-        ar.id,
-        'artist' AS type,
-        ar.name AS display_name,
-        NULL AS zing_song_id,
-        ar.zing_artist_id,
-        NULL AS zing_album_id,
-        NULL AS artist_name,
-        NULL AS album_title,
-        CASE
-          WHEN ar.zing_artist_id = ? THEN 3
-          WHEN ar.name LIKE ? THEN 1
-          ELSE 0
-        END AS relevance
-      FROM artists ar
-       WHERE ar.name LIKE ? OR ar.zing_artist_id LIKE ?
-
-      UNION ALL
-
-      SELECT
-        al.id,
-        'album' AS type,
-        al.title AS display_name,
-       NULL AS zing_song_id,
-        NULL AS zing_artist_id,
-        al.zing_album_id,
-        NULL AS artist_name,
-        NULL AS album_title,
-        CASE
-        WHEN al.zing_album_id = ? THEN 3
-          WHEN al.title LIKE ? THEN 1
-          ELSE 0
-        END AS relevance
-      FROM albums al
-       WHERE al.title LIKE ? OR al.zing_album_id LIKE ?
-    ) AS results
-    ORDER BY relevance DESC, display_name ASC
-    LIMIT ? OFFSET ?;
-  `,
+  return rows;
+};
+const searchArtists = async (keyword, { limit, offset }) => {
+  const [rows] = await db.query(
+    `
+    SELECT
+      a.*,
+      (a.name LIKE ?) * 5 +
+      (a.name LIKE ?) * 3 +
+      (a.follow_count * 0.01) AS score
+    FROM artists a
+    WHERE a.name LIKE ?
+    ORDER BY score DESC
+    LIMIT ? OFFSET ?
+    `,
     [
-      trimmedKeyword,
-      wildcard,
-      wildcard,
-      wildcard,
-      trimmedKeyword,
-      wildcard,
-      wildcard,
-      wildcard,
-      trimmedKeyword,
-      wildcard,
-      wildcard,
-      wildcard,
+      `${keyword}%`,
+      `%${keyword}%`,
+      `%${keyword}%`,
       limit,
       offset,
     ]
   );
 
+  return rows;
+};
+const searchAlbums = async (keyword, { limit, offset }) => {
+  const [rows] = await db.query(
+    `
+    SELECT
+      al.*,
+      (al.title LIKE ?) * 5 +
+      (al.title LIKE ?) * 3 AS score
+    FROM albums al
+    WHERE al.title LIKE ?
+    ORDER BY score DESC
+    LIMIT ? OFFSET ?
+    `,
+    [
+      `${keyword}%`,
+      `%${keyword}%`,
+      `%${keyword}%`,
+      limit,
+      offset,
+    ]
+  );
+
+  return rows;
+};
+
+
+export const searchEntities = async (keyword, options) => {
+  const [songs, artists, albums] = await Promise.all([
+    searchSongs(keyword, options),
+    searchArtists(keyword, options),
+    searchAlbums(keyword, options),
+  ]);
+
   return {
-    items: rows.map((row) => mapHighlightedFields(row, trimmedKeyword)),
-    meta: buildPaginationMeta(page, limit, total),
+    items: {
+      songs,
+      artists,
+      albums,
+    },
+    meta: buildPaginationMeta(options.page, options.limit),
   };
 };
 
-export const saveSearchHistory = async (keyword, userId = null) => {
+
+
+export const saveSearchHistory = async (keyword, userId) => {
+  if (!keyword || !userId) return;
+
+  const normalized = keyword.trim().toLowerCase();
+
+  // 1️⃣ Xoá keyword trùng (không phân biệt hoa thường)
   await db.query(
     `
-    INSERT INTO search_history (keyword, user_id)
+    DELETE FROM search_history
+    WHERE user_id = ?
+      AND LOWER(keyword) = ?
+    `,
+    [userId, normalized]
+  );
+
+  // 2️⃣ Insert lại keyword (searched_at mới nhất)
+  await db.query(
+    `
+    INSERT INTO search_history (user_id, keyword)
     VALUES (?, ?)
-  `,
-    [keyword, userId]
+    `,
+    [userId, keyword.trim()]
+  );
+
+  // 3️⃣ Giữ tối đa 20 lịch sử gần nhất
+  await db.query(
+    `
+    DELETE FROM search_history
+    WHERE user_id = ?
+      AND id NOT IN (
+        SELECT id FROM (
+          SELECT id
+          FROM search_history
+          WHERE user_id = ?
+          ORDER BY searched_at DESC
+          LIMIT 20
+        ) t
+      )
+    `,
+    [userId, userId]
   );
 };
+
+
 
 export const listSearchHistory = async (userId, { page, limit, offset }) => {
   if (!userId) {
@@ -162,29 +182,32 @@ export const listSearchHistory = async (userId, { page, limit, offset }) => {
     };
   }
 
-  const [countRows] = await db.query(
-    `SELECT COUNT(*) AS total FROM search_history WHERE user_id = ?`,
-    [userId]
-  );
-
-  const total = countRows[0]?.total || 0;
-
   const [rows] = await db.query(
     `
-    SELECT *
-    FROM search_history
-    WHERE user_id = ?
-    ORDER BY id DESC
-    LIMIT ? OFFSET ?;
-  `,
+    SELECT sh.id, sh.keyword, sh.searched_at
+    FROM search_history sh
+    INNER JOIN (
+      SELECT
+        LOWER(keyword) AS keyword_norm,
+        MAX(id) AS max_id
+      FROM search_history
+      WHERE user_id = ?
+      GROUP BY LOWER(keyword)
+    ) latest
+      ON LOWER(sh.keyword) = latest.keyword_norm
+     AND sh.id = latest.max_id
+    ORDER BY sh.searched_at DESC
+    LIMIT ? OFFSET ?
+    `,
     [userId, limit, offset]
   );
 
   return {
     items: rows,
-    meta: buildPaginationMeta(page, limit, total),
+    meta: buildPaginationMeta(page, limit, rows.length),
   };
 };
+
 
 export default {
   searchEntities,

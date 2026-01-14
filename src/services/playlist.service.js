@@ -43,10 +43,18 @@ const ensurePlaylistOwner = async (playlistId, userId) => {
 const mapPlaylistSong = (row) => ({
   id: row.song_id,
   position: row.position,
+
   title: row.title,
+  duration: row.duration,
+
   artist_id: row.artist_id,
+
   album_id: row.album_id,
+  album_title: row.album_title,
+
+  cover_url: row.cover_url,
 });
+
 
 export const listPlaylists = async (userId) => {
   const [rows] = await db.query(
@@ -62,29 +70,43 @@ export const listPlaylists = async (userId) => {
 };
 
 export const getPlaylistById = async (id) => {
+  // 1️⃣ Lấy playlist
   const [playlistRows] = await db.query(
-    "SELECT * FROM playlists WHERE id = ?",
+    `
+    SELECT *
+    FROM playlists
+    WHERE id = ?
+    LIMIT 1
+    `,
     [id]
   );
-  const playlist = playlistRows[0];
 
+  const playlist = playlistRows[0];
   if (!playlist) {
     return null;
   }
 
+  // 2️⃣ Lấy danh sách bài hát trong playlist
   const [songRows] = await db.query(
     `
     SELECT
       ps.song_id,
       ps.position,
+
       s.title,
+      s.duration,
       s.artist_id,
-      s.album_id
+      s.album_id,
+      s.cover_url,
+
+      al.title AS album_title
     FROM playlist_songs ps
-    LEFT JOIN songs s ON s.id = ps.song_id
+    JOIN songs s ON s.id = ps.song_id
+    LEFT JOIN albums al ON al.id = s.album_id
     WHERE ps.playlist_id = ?
+      AND s.status = 'approved'
     ORDER BY ps.position ASC
-  `,
+    `,
     [id]
   );
 
@@ -93,6 +115,8 @@ export const getPlaylistById = async (id) => {
     songs: songRows.map(mapPlaylistSong),
   };
 };
+
+
 
 export const createPlaylist = async (userId, { name }) => {
   if (!name) {

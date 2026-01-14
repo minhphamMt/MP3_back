@@ -7,13 +7,23 @@ import {
 } from "../services/album.service.js";
 import { getPaginationParams } from "../utils/pagination.js";
 import { errorResponse, successResponse } from "../utils/response.js";
-
+import {
+  likeAlbum,
+  unlikeAlbum,
+} from "../services/album-like.service.js";
 const parseGenreQuery = (query) => query.genre || query.genres || [];
 
 export const getAlbums = async (req, res, next) => {
   try {
     const { page, limit, offset } = getPaginationParams(req.query);
-    const { artistId, artist_id: artist_id_param, status } = req.query;
+
+    const {
+      artistId,
+      artist_id: artist_id_param,
+      status,
+      sort = "release_date",
+      order = "desc",
+    } = req.query;
 
     const result = await listAlbums({
       page,
@@ -22,6 +32,10 @@ export const getAlbums = async (req, res, next) => {
       status,
       artistId: artistId || artist_id_param,
       genres: parseGenreQuery(req.query),
+
+      // 🔴 THÊM 2 DÒNG NÀY
+      sort,
+      order,
     });
 
     return successResponse(res, result.items, result.meta);
@@ -72,10 +86,41 @@ export const deleteAlbumHandler = async (req, res, next) => {
     return next(error);
   }
 };
+/**
+ * POST /albums/:id/like
+ */
+export const likeAlbumHandler = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const albumId = req.params.id;
+
+    const result = await likeAlbum(userId, albumId);
+    return successResponse(res, result, null, 201);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * DELETE /albums/:id/like
+ */
+export const unlikeAlbumHandler = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const albumId = req.params.id;
+
+    const result = await unlikeAlbum(userId, albumId);
+    return successResponse(res, result);
+  } catch (error) {
+    next(error);
+  }
+};
 export default {
   getAlbums,
   getAlbum,
   createAlbumHandler,
   updateAlbumHandler,
   deleteAlbumHandler,
+  likeAlbumHandler,
+  unlikeAlbumHandler,
 };

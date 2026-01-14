@@ -8,6 +8,8 @@ import {
   listSongs,
   unlikeSong,
   updateSong,
+  listSongsByArtist,
+  getLikedSongs
 } from "../services/song.service.js";
 import { getPaginationParams } from "../utils/pagination.js";
 import { errorResponse, successResponse } from "../utils/response.js";
@@ -81,6 +83,7 @@ export const recordPlay = async (req, res, next) => {
     if (!req.user?.id) {
       return errorResponse(res, "Authentication required", 401);
     }
+    
 
     const duration = Number(req.body?.duration);
     const normalizedDuration = Number.isFinite(duration) ? duration : null;
@@ -130,6 +133,36 @@ export const deleteSongHandler = async (req, res, next) => {
     return next(error);
   }
 };
+export const getSongsByArtist = async (req, res, next) => {
+  try {
+    const { artist_id } = req.query;
+
+    if (!artist_id) {
+      return res.status(400).json({
+        success: false,
+        message: "artist_id is required",
+      });
+    }
+
+    const songs = await listSongsByArtist(artist_id);
+
+    return successResponse(res, songs);
+  } catch (err) {
+    next(err);
+  }
+};
+
+
+export const getLikedSongss = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const songs = await getLikedSongs(userId);
+    return successResponse(res, songs);
+  } catch (err) {
+    next(err);
+  }
+};
+
 export default {
   getSongs,
   getSong,
@@ -140,4 +173,6 @@ export default {
   createSongHandler,
   updateSongHandler,
   deleteSongHandler,
+  getSongsByArtist,
+  getLikedSongss
 };
