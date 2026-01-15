@@ -36,12 +36,14 @@ router.post(
   "/",
   authMiddleware,
   rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
+  uploadArtistAvatar,
   artistController.createArtistHandler
 );
 router.put(
   "/:id",
   authMiddleware,
    rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
+   uploadArtistAvatar,
   artistController.updateArtistHandler
 );
 router.delete(

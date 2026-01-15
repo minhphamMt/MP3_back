@@ -4,6 +4,7 @@ import {
   getAlbumById,
   listAlbums,
   updateAlbum,
+  updateAlbumCover,
 } from "../services/album.service.js";
 import { getPaginationParams } from "../utils/pagination.js";
 import { errorResponse, successResponse } from "../utils/response.js";
@@ -66,6 +67,10 @@ export const createAlbumHandler = async (req, res, next) => {
   try {
      const payload = { ...req.body };
 
+    if (req.file) {
+      payload.cover_url = `/uploads/albums/${req.file.filename}`;
+    }
+
     if (req.user?.role === ROLES.ARTIST) {
       const artist = await getArtistByUserId(req.user.id);
       if (!artist) {
@@ -85,6 +90,9 @@ export const createAlbumHandler = async (req, res, next) => {
 export const updateAlbumHandler = async (req, res, next) => {
   try {
     const payload = { ...req.body };
+    const coverUrl = req.file
+      ? `/uploads/albums/${req.file.filename}`
+      : null;
 
     if (req.user?.role === ROLES.ARTIST) {
       const artist = await getArtistByUserId(req.user.id);
@@ -105,7 +113,10 @@ export const updateAlbumHandler = async (req, res, next) => {
       delete payload.artist_id;
     }
 
-    const album = await updateAlbum(req.params.id, payload);
+    let album = await updateAlbum(req.params.id, payload);
+    if (coverUrl) {
+      album = await updateAlbumCover(req.params.id, coverUrl);
+    }
     return successResponse(res, album);
   } catch (error) {
     return next(error);
@@ -114,7 +125,7 @@ export const updateAlbumHandler = async (req, res, next) => {
 
 export const deleteAlbumHandler = async (req, res, next) => {
   try {
-     if (req.user?.role === ROLES.ARTIST) {
+    if (req.user?.role === ROLES.ARTIST) {
       const artist = await getArtistByUserId(req.user.id);
       if (!artist) {
         return errorResponse(res, "Artist profile not found", 403);
@@ -161,29 +172,33 @@ export const unlikeAlbumHandler = async (req, res, next) => {
   }
 };
 export const uploadAlbumCoverHandler = async (req, res, next) => {
-  if (!req.file) {
-    return errorResponse(res, "No file uploaded", 400);
-  }
-
-  const album = await getAlbumById(req.params.id, { includeSongs: false });
-  if (!album) {
-    return errorResponse(res, "Album not found", 404);
-  }
-
-  if (req.user.role === ROLES.ARTIST) {
-    const artist = await getArtistByUserId(req.user.id);
-    if (!artist || album.artist_id !== artist.id) {
-      return errorResponse(res, "Forbidden", 403);
+   try {
+    if (!req.file) {
+      return errorResponse(res, "No file uploaded", 400);
     }
+
+    const album = await getAlbumById(req.params.id, { includeSongs: false });
+    if (!album) {
+      return errorResponse(res, "Album not found", 404);
+    }
+
+    if (req.user.role === ROLES.ARTIST) {
+      const artist = await getArtistByUserId(req.user.id);
+      if (!artist || album.artist_id !== artist.id) {
+        return errorResponse(res, "Forbidden", 403);
+      }
+    }
+
+    const coverUrl = `/uploads/albums/${req.file.filename}`;
+    const updatedAlbum = await updateAlbumCover(album.id, coverUrl);
+
+    return successResponse(res, {
+      cover_url: coverUrl,
+      album: updatedAlbum,
+    });
+  } catch (error) {
+    return next(error);
   }
-
-  const coverUrl = `/uploads/albums/${req.file.filename}`;
-  const updatedAlbum = await updateAlbumCover(album.id, coverUrl);
-
-  return successResponse(res, {
-    cover_url: coverUrl,
-    album: updatedAlbum,
-  });
 };
 
 export default {

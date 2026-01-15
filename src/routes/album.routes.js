@@ -21,12 +21,14 @@ router.post(
   "/",
   authMiddleware,
  rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
+ uploadAlbumCover,
   albumController.createAlbumHandler
 );
 router.put(
   "/:id",
   authMiddleware,
  rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
+ uploadAlbumCover,
   albumController.updateAlbumHandler
 );
 router.delete(

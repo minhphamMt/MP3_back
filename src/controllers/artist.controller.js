@@ -73,6 +73,9 @@ export const createArtistHandler = async (req, res, next) => {
     }
 
     const payload = { ...req.body };
+    if (req.file) {
+      payload.avatar_url = `/uploads/images/${req.file.filename}`;
+    }
 
     if (req.user?.role === ROLES.ARTIST) {
       const existing = await getArtistByUserId(req.user.id);
@@ -95,6 +98,11 @@ export const updateArtistHandler = async (req, res, next) => {
       return errorResponse(res, "zing_artist_id cannot be set manually", 400);
     }
 
+    const payload = { ...req.body };
+    if (req.file) {
+      payload.avatar_url = `/uploads/images/${req.file.filename}`;
+    }
+
     if (req.user?.role === ROLES.ARTIST) {
       const artistProfile = await getArtistByUserId(req.user.id);
       if (!artistProfile || Number(req.params.id) !== artistProfile.id) {
@@ -102,7 +110,7 @@ export const updateArtistHandler = async (req, res, next) => {
       }
     }
 
-    const artist = await updateArtist(req.params.id, req.body);
+    const artist = await updateArtist(req.params.id, payload);
     return successResponse(res, artist);
   } catch (error) {
     return next(error);

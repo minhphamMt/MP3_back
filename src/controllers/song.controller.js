@@ -115,6 +115,9 @@ export const getSongEngagement = async (req, res, next) => {
 export const createSongHandler = async (req, res, next) => {
   try {
     const payload = { ...req.body };
+    if (req.file) {
+      payload.audio_path = `/uploads/music/${req.file.filename}`;
+    }
 
     if (req.user?.role === ROLES.ARTIST) {
       const artist = await getArtistByUserId(req.user.id);
@@ -148,6 +151,9 @@ export const createSongHandler = async (req, res, next) => {
 export const updateSongHandler = async (req, res, next) => {
   try {
     const payload = { ...req.body };
+    if (req.file) {
+      payload.audio_path = `/uploads/music/${req.file.filename}`;
+    }
 
     if (req.user?.role === ROLES.ARTIST) {
       const artist = await getArtistByUserId(req.user.id);

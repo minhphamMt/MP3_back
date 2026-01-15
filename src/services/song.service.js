@@ -175,151 +175,78 @@ export const reviewSong = async (
   return getSongById(songId);
 };
 export const listSongs = async ({
-  page,
-  limit,
-  offset,
-  genres = [],
-  status,
-  artistId,
-  albumId,
+page,
+limit,
+offset,
+genres = [],
+status,
+artistId,
+albumId,
+includeUnreleased = false,
 }) => {
-  const filters = [];
-  const params = [];
-  const normalizedGenres = normalizeGenres(genres);
+const filters = ["s.status = 'approved'"];
+const params = [];
 
-  if (status) {
-    filters.push("s.status = ?");
-    params.push(status);
-  }
 
-  if (artistId) {
-    filters.push("s.artist_id = ?");
-    params.push(artistId);
-  }
+if (!includeUnreleased) {
+filters.push(
+"(s.album_id IS NULL OR al.release_date IS NULL OR al.release_date <= NOW())"
+);
+}
 
-  if (albumId) {
-    filters.push("s.album_id = ?");
-    params.push(albumId);
-  }
 
-  if (normalizedGenres.length > 0) {
-    const placeholders = normalizedGenres.map(() => "?").join(",");
-    filters.push(
-      `EXISTS (
-        SELECT 1
-        FROM song_genres sg
-        JOIN genres g ON g.id = sg.genre_id
-        WHERE sg.song_id = s.id AND g.name IN (${placeholders})
-      )`
-    );
-    params.push(...normalizedGenres);
-  }
+if (artistId) {
+filters.push("s.artist_id = ?");
+params.push(artistId);
+}
 
-  const whereClause = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
 
-  const [countRows] = await db.query(
-    `SELECT COUNT(*) as total FROM songs s ${whereClause}`,
-    params
-  );
-  const total = countRows[0]?.total || 0;
+if (albumId) {
+filters.push("s.album_id = ?");
+params.push(albumId);
+}
 
-  const [rows] = await db.query(
-    `
-    SELECT
-      s.*,
-      ar.name AS artist_name,
-      al.title AS album_title,
-      (SELECT COUNT(*) FROM song_likes sl WHERE sl.song_id = s.id) AS like_count,
-      (SELECT GROUP_CONCAT(DISTINCT g2.name)
-        FROM song_genres sg2
-        JOIN genres g2 ON g2.id = sg2.genre_id
-        WHERE sg2.song_id = s.id) AS genres
-    FROM songs s
-    LEFT JOIN artists ar ON ar.id = s.artist_id
-    LEFT JOIN albums al ON al.id = s.album_id
-    ${whereClause}
-    ORDER BY s.id DESC
-    LIMIT ? OFFSET ?;
-  `,
-    [...params, limit, offset]
-  );
 
-  const items = rows.map((row) => ({
-    ...row,
-    like_count: row.like_count || 0,
-    genres: parseGenreString(row.genres),
-    artist: row.artist_id ? { id: row.artist_id, name: row.artist_name } : null,
-    album: row.album_id ? { id: row.album_id, title: row.album_title } : null,
-  }));
+const whereClause = `WHERE ${filters.join(" AND ")}`;
 
-  return {
-    items,
-    meta: buildPaginationMeta(page, limit, total),
-  };
+
+const [rows] = await db.query(
+`
+SELECT s.*, ar.name AS artist_name, al.title AS album_title
+FROM songs s
+LEFT JOIN artists ar ON ar.id = s.artist_id
+LEFT JOIN albums al ON al.id = s.album_id
+${whereClause}
+ORDER BY s.release_date DESC
+LIMIT ? OFFSET ?
+`,
+[...params, limit, offset]
+);
+
+
+return {
+items: rows,
+meta: { page, limit },
+};
 };
 
-export const getSongById = async (id, { status, genres = [] } = {}) => {
-  const normalizedGenres = normalizeGenres(genres);
-  const filters = ["s.id = ?"];
-  const params = [id];
+export const getSongById = async (id, { includeUnreleased = false } = {}) => {
+const [rows] = await db.query(
+`
+SELECT s.*, ar.name AS artist_name, al.title AS album_title, al.release_date AS album_release_date
+FROM songs s
+LEFT JOIN artists ar ON ar.id = s.artist_id
+LEFT JOIN albums al ON al.id = s.album_id
+WHERE s.id = ?
+AND s.status = 'approved'
+${includeUnreleased ? "" : "AND (s.album_id IS NULL OR al.release_date <= NOW())"}
+LIMIT 1;
+`,
+[id]
+);
 
-  if (status) {
-    filters.push("s.status = ?");
-    params.push(status);
-  }
 
-  if (normalizedGenres.length > 0) {
-    const placeholders = normalizedGenres.map(() => "?").join(",");
-    filters.push(
-      `EXISTS (
-        SELECT 1
-        FROM song_genres sg
-        JOIN genres g ON g.id = sg.genre_id
-        WHERE sg.song_id = s.id AND g.name IN (${placeholders})
-      )`
-    );
-    params.push(...normalizedGenres);
-  }
-
-  const whereClause = `WHERE ${filters.join(" AND ")}`;
-
-  const [rows] = await db.query(
-    `
-    SELECT
-      s.*,
-      ar.name AS artist_name,
-      al.title AS album_title,
-      (SELECT COUNT(*) FROM song_likes sl WHERE sl.song_id = s.id) AS like_count,
-      (SELECT GROUP_CONCAT(DISTINCT g2.name)
-        FROM song_genres sg2
-        JOIN genres g2 ON g2.id = sg2.genre_id
-        WHERE sg2.song_id = s.id) AS genres
-    FROM songs s
-    LEFT JOIN artists ar ON ar.id = s.artist_id
-    LEFT JOIN albums al ON al.id = s.album_id
-    ${whereClause}
-    LIMIT 1;
-  `,
-    params
-  );
-
-  const song = rows[0];
-
-  if (!song) {
-    return null;
-  }
-
-  return {
-    ...song,
-    like_count: song.like_count || 0,
-    genres: parseGenreString(song.genres),
-    artist: song.artist_id
-      ? { id: song.artist_id, name: song.artist_name }
-      : null,
-    album: song.album_id
-      ? { id: song.album_id, title: song.album_title }
-      : null,
-  };
+return rows[0] || null;
 };
 export const likeSong = async (songId, userId) => {
   const [songs] = await db.query("SELECT id FROM songs WHERE id = ?", [songId]);
@@ -376,12 +303,43 @@ const getWeekStartDate = () => {
   `;
 };
 export const recordSongPlay = async (songId, userId, duration = null) => {
-  // 1️⃣ phải nghe thật ≥ 30s
+  /**
+   * 0️⃣ CHẶN NHẠC CHƯA PHÁT HÀNH
+   * - Bài phải tồn tại
+   * - status = approved
+   * - nếu có album thì album.release_date <= NOW()
+   */
+  const [songRows] = await db.query(
+    `
+    SELECT s.id
+    FROM songs s
+    LEFT JOIN albums al ON al.id = s.album_id
+    WHERE s.id = ?
+      AND s.status = 'approved'
+      AND (
+        s.album_id IS NULL
+        OR al.release_date IS NULL
+        OR al.release_date <= NOW()
+      )
+    LIMIT 1
+    `,
+    [songId]
+  );
+
+  if (!songRows[0]) {
+    throw createError(404, "Song not released or not found");
+  }
+
+  /**
+   * 1️⃣ phải nghe thật ≥ 30s
+   */
   if (!Number.isFinite(duration) || duration < 30) {
     return getSongEngagement(songId);
   }
 
-  // 2️⃣ chống spam: đã nghe trong 5 phút gần nhất?
+  /**
+   * 2️⃣ chống spam: đã nghe trong 5 phút gần nhất?
+   */
   if (userId) {
     const alreadyCounted = await hasRecentListening(userId, songId);
     if (alreadyCounted) {
@@ -389,7 +347,9 @@ export const recordSongPlay = async (songId, userId, duration = null) => {
     }
   }
 
-  // 3️⃣ tăng play_count (tổng)
+  /**
+   * 3️⃣ tăng play_count (tổng)
+   */
   const [result] = await db.query(
     "UPDATE songs SET play_count = play_count + 1 WHERE id = ?",
     [songId]
@@ -399,12 +359,16 @@ export const recordSongPlay = async (songId, userId, duration = null) => {
     throw createError(404, "Song not found");
   }
 
-  // 4️⃣ lưu history
+  /**
+   * 4️⃣ lưu listening history
+   */
   if (userId) {
     await recordListeningHistory(userId, songId, duration);
   }
 
-
+  /**
+   * 5️⃣ thống kê theo NGÀY
+   */
   await db.query(
     `
     INSERT INTO song_play_stats (song_id, period_type, period_start, play_count)
@@ -414,13 +378,15 @@ export const recordSongPlay = async (songId, userId, duration = null) => {
     [songId]
   );
 
-
+  /**
+   * 6️⃣ thống kê theo TUẦN
+   */
   await db.query(
     `
     INSERT INTO song_play_stats (song_id, period_type, period_start, play_count)
     VALUES (
-      ?, 
-      'week', 
+      ?,
+      'week',
       DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY),
       1
     )
@@ -429,8 +395,12 @@ export const recordSongPlay = async (songId, userId, duration = null) => {
     [songId]
   );
 
+  /**
+   * 7️⃣ trả kết quả
+   */
   return getSongEngagement(songId);
 };
+
 
 
 

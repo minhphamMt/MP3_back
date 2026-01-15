@@ -22,138 +22,127 @@ const parseGenreString = (genreString) =>
   genreString ? genreString.split(",").filter(Boolean) : [];
 
 export const listAlbums = async ({
-  page,
-  limit,
-  offset,
-  status,
-  artistId,
-  genres,
-  sort = "release_date",
-  order = "desc",
+page,
+limit,
+offset,
+status,
+artistId,
+genres,
+sort = "release_date",
+order = "desc",
+includeUnreleased = false, // ADMIN / ARTIST
 }) => {
-  const allowedSort = {
-    release_date: "a.release_date",
-    created_at: "a.created_at",
-    title: "a.title",
-  };
+const allowedSort = {
+release_date: "a.release_date",
+created_at: "a.created_at",
+title: "a.title",
+};
 
-  const sortColumn = allowedSort[sort] || allowedSort.release_date;
-  const sortOrder = order.toUpperCase() === "ASC" ? "ASC" : "DESC";
 
-  let where = "WHERE 1=1";
-  const params = [];
+const sortColumn = allowedSort[sort] || allowedSort.release_date;
+const sortOrder = order.toUpperCase() === "ASC" ? "ASC" : "DESC";
 
-  if (status) {
-    where += " AND a.status = ?";
-    params.push(status);
-  }
 
-  if (artistId) {
-    where += " AND a.artist_id = ?";
-    params.push(artistId);
-  }
+let where = "WHERE 1=1";
+const params = [];
 
-  const sql = `
-    SELECT a.*
-    FROM albums a
-    ${where}
-    ORDER BY ${sortColumn} ${sortOrder}
-    LIMIT ? OFFSET ?
-  `;
 
-  params.push(limit, offset);
+if (!includeUnreleased) {
+where += " AND (a.release_date IS NULL OR a.release_date <= NOW())";
+}
 
-  const [rows] = await db.query(sql, params);
 
-  return {
-    items: rows,
-    meta: { page, limit },
-  };
+if (status) {
+where += " AND a.status = ?";
+params.push(status);
+}
+
+
+if (artistId) {
+where += " AND a.artist_id = ?";
+params.push(artistId);
+}
+
+
+const sql = `
+SELECT a.*
+FROM albums a
+${where}
+ORDER BY ${sortColumn} ${sortOrder}
+LIMIT ? OFFSET ?
+`;
+
+
+params.push(limit, offset);
+
+
+const [rows] = await db.query(sql, params);
+
+
+return {
+items: rows,
+meta: { page, limit },
+};
 };
 
 export const getAlbumById = async (
-  id,
-  { status, genres = [], includeSongs = true } = {}
+id,
+{ status, genres = [], includeSongs = true, includeUnreleased = false } = {}
 ) => {
-  const [albumRows] = await db.query(
-    `
-    SELECT
-      al.*,
-      ar.name AS artist_name
-    FROM albums al
-    LEFT JOIN artists ar ON ar.id = al.artist_id
-    WHERE al.id = ?
-    LIMIT 1;
-  `,
-    [id]
-  );
+const [albumRows] = await db.query(
+`
+SELECT al.*, ar.name AS artist_name
+FROM albums al
+LEFT JOIN artists ar ON ar.id = al.artist_id
+WHERE al.id = ?
+${includeUnreleased ? "" : "AND (al.release_date IS NULL OR al.release_date <= NOW())"}
+LIMIT 1;
+`,
+[id]
+);
 
-  const album = albumRows[0];
 
-  if (!album) {
-    return null;
-  }
+const album = albumRows[0];
+if (!album) return null;
 
-  const normalizedGenres = normalizeGenres(genres);
-  let songs = [];
 
-  if (includeSongs) {
-    const songFilters = ["s.album_id = ?"];
-    const songParams = [id];
+let songs = [];
 
-    if (status) {
-      songFilters.push("s.status = ?");
-      songParams.push(status);
-    }
 
-    if (normalizedGenres.length > 0) {
-      const placeholders = normalizedGenres.map(() => "?").join(",");
-      songFilters.push(
-        `EXISTS (
-          SELECT 1
-          FROM song_genres sg
-          JOIN genres g ON g.id = sg.genre_id
-          WHERE sg.song_id = s.id AND g.name IN (${placeholders})
-        )`
-      );
-      songParams.push(...normalizedGenres);
-    }
+if (includeSongs) {
+const songFilters = [
+"s.album_id = ?",
+"s.status = 'approved'",
+includeUnreleased
+? "1=1"
+: "(al.release_date IS NULL OR al.release_date <= NOW())",
+];
 
-    const songWhere = `WHERE ${songFilters.join(" AND ")}`;
 
-    const [songRows] = await db.query(
-      `
-      SELECT
-        s.*,
-        ar.name AS artist_name,
-        (SELECT GROUP_CONCAT(DISTINCT g2.name)
-          FROM song_genres sg2
-          JOIN genres g2 ON g2.id = sg2.genre_id
-          WHERE sg2.song_id = s.id) AS genres
-      FROM songs s
-      LEFT JOIN artists ar ON ar.id = s.artist_id
-      ${songWhere}
-      ORDER BY s.id DESC;
-    `,
-      songParams
-    );
+const [songRows] = await db.query(
+`
+SELECT s.*, ar.name AS artist_name
+FROM songs s
+JOIN albums al ON al.id = s.album_id
+LEFT JOIN artists ar ON ar.id = s.artist_id
+WHERE ${songFilters.join(" AND ")}
+ORDER BY s.id DESC;
+`,
+[id]
+);
 
-    songs = songRows.map((song) => ({
-      ...song,
-      genres: parseGenreString(song.genres),
-      artist: song.artist_id
-        ? { id: song.artist_id, name: song.artist_name }
-        : null,
-    }));
-  }
 
-  return {
-    ...album,
-    artist: album.artist_id
-      ? { id: album.artist_id, name: album.artist_name }
-      : null,
-    songs,
-  };
+songs = songRows;
+}
+
+
+return {
+...album,
+artist: album.artist_id
+? { id: album.artist_id, name: album.artist_name }
+: null,
+songs,
+};
 };
 
 export const updateAlbumCover = async (albumId, coverUrl) => {

@@ -16,12 +16,14 @@ router.post(
   "/",
   authMiddleware,
   rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
+  uploadSongAudioFile,
   songController.createSongHandler
 );
 router.put(
   "/:id",
   authMiddleware,
   rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
+  uploadSongAudioFile,
   songController.updateSongHandler
 );
 router.post(
