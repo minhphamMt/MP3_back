@@ -137,7 +137,7 @@ export const getArtistCollections = async (req, res, next) => {
 export const uploadArtistAvatar = async (req, res, next) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ message: "No file uploaded" });
+      return errorResponse(res, "No file uploaded", 400);
     }
 
     const artist = await getArtistByUserId(req.user.id);
@@ -146,19 +146,20 @@ export const uploadArtistAvatar = async (req, res, next) => {
     }
 
     const avatarUrl = `/uploads/images/${req.file.filename}`;
+
     const updatedArtist = await updateArtist(artist.id, {
       avatar_url: avatarUrl,
     });
 
-    return res.json({
-      message: "Artist avatar uploaded successfully",
+    return successResponse(res, {
       avatar_url: avatarUrl,
       artist: updatedArtist,
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    return next(error);
   }
 };
+
 
 export default {
   getArtists,

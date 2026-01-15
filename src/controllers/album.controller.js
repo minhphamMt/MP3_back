@@ -136,9 +136,7 @@ export const deleteAlbumHandler = async (req, res, next) => {
     return next(error);
   }
 };
-/**
- * POST /albums/:id/like
- */
+
 export const likeAlbumHandler = async (req, res, next) => {
   try {
     const userId = req.user.id;
@@ -151,9 +149,6 @@ export const likeAlbumHandler = async (req, res, next) => {
   }
 };
 
-/**
- * DELETE /albums/:id/like
- */
 export const unlikeAlbumHandler = async (req, res, next) => {
   try {
     const userId = req.user.id;
@@ -165,6 +160,32 @@ export const unlikeAlbumHandler = async (req, res, next) => {
     next(error);
   }
 };
+export const uploadAlbumCoverHandler = async (req, res, next) => {
+  if (!req.file) {
+    return errorResponse(res, "No file uploaded", 400);
+  }
+
+  const album = await getAlbumById(req.params.id, { includeSongs: false });
+  if (!album) {
+    return errorResponse(res, "Album not found", 404);
+  }
+
+  if (req.user.role === ROLES.ARTIST) {
+    const artist = await getArtistByUserId(req.user.id);
+    if (!artist || album.artist_id !== artist.id) {
+      return errorResponse(res, "Forbidden", 403);
+    }
+  }
+
+  const coverUrl = `/uploads/albums/${req.file.filename}`;
+  const updatedAlbum = await updateAlbumCover(album.id, coverUrl);
+
+  return successResponse(res, {
+    cover_url: coverUrl,
+    album: updatedAlbum,
+  });
+};
+
 export default {
   getAlbums,
   getAlbum,
@@ -173,4 +194,5 @@ export default {
   deleteAlbumHandler,
   likeAlbumHandler,
   unlikeAlbumHandler,
+  uploadAlbumCoverHandler
 };

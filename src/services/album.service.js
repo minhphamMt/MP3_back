@@ -206,34 +206,45 @@ export const createAlbum = async ({
 
 export const updateAlbum = async (
   id,
-  { title, artist_id, release_date, cover_url, zing_album_id }
+  { title, release_date }
 ) => {
-  const [existing] = await db.query("SELECT * FROM albums WHERE id = ?", [id]);
+  const [existing] = await db.query(
+    "SELECT * FROM albums WHERE id = ?",
+    [id]
+  );
+
   if (!existing[0]) {
     throw createError(404, "Album not found");
   }
 
   const fields = [];
   const values = [];
-  const payload = { title, artist_id, release_date, cover_url, zing_album_id };
 
-  Object.entries(payload).forEach(([key, value]) => {
-    if (value !== undefined) {
-      fields.push(`${key} = ?`);
-      values.push(value);
-    }
-  });
-
-  if (fields.length) {
-    values.push(id);
-    await db.query(
-      `UPDATE albums SET ${fields.join(", ")} WHERE id = ?`,
-      values
-    );
+  // ✅ CHỈ CHO PHÉP UPDATE METADATA
+  if (title !== undefined) {
+    fields.push("title = ?");
+    values.push(title);
   }
+
+  if (release_date !== undefined) {
+    fields.push("release_date = ?");
+    values.push(release_date);
+  }
+
+  if (!fields.length) {
+    return getAlbumById(id);
+  }
+
+  values.push(id);
+
+  await db.query(
+    `UPDATE albums SET ${fields.join(", ")} WHERE id = ?`,
+    values
+  );
 
   return getAlbumById(id);
 };
+
 
 export const deleteAlbum = async (id) => {
   const [result] = await db.query("DELETE FROM albums WHERE id = ?", [id]);

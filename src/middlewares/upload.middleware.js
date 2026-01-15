@@ -62,3 +62,18 @@ export const uploadSongAudio = multer({
   fileFilter: audioFileFilter,
   limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
 }).single("audio");
+
+const albumCoverDir = path.join(process.cwd(), "uploads/albums");
+
+[albumCoverDir].forEach((dir) => {
+  fs.mkdirSync(dir, { recursive: true });
+});
+
+export const uploadAlbumCover = multer({
+  storage: createStorage({
+    destination: albumCoverDir,
+    filenamePrefix: "album-cover",
+  }),
+  fileFilter: imageFileFilter,
+  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
+}).single("cover");

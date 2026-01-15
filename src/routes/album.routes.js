@@ -6,7 +6,9 @@ import ROLES from "../constants/roles.js";
 import {
   likeAlbumHandler,
   unlikeAlbumHandler,
+  uploadAlbumCoverHandler,
 } from "../controllers/album.controller.js";
+import { uploadAlbumCover } from "../middlewares/upload.middleware.js";
 const router = Router();
 // Public routes
 router.get("/", albumController.getAlbums);
@@ -32,6 +34,13 @@ router.delete(
   authMiddleware,
   rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
   albumController.deleteAlbumHandler
+);
+router.post(
+  "/:id/cover",
+  authMiddleware,
+  rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
+  uploadAlbumCover,
+  uploadAlbumCoverHandler
 );
 
 export default router;
