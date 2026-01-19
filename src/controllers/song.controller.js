@@ -310,9 +310,17 @@ export const deleteSongHandler = async (req, res, next) => {
 };
 export const getSongsByArtist = async (req, res, next) => {
   try {
-    const { artist_id } = req.query;
+    const { artistId, artist_id: artist_id_param } = req.query;
+    let resolvedArtistId = artistId || artist_id_param;
 
-    if (!artist_id) {
+    if (!resolvedArtistId && req.user?.role === ROLES.ARTIST) {
+      const artist = await getArtistByUserId(req.user.id);
+      if (artist) {
+        resolvedArtistId = artist.id;
+      }
+    }
+
+    if (!resolvedArtistId) {
       return res.status(400).json({
         success: false,
         message: "artist_id is required",
@@ -320,10 +328,12 @@ export const getSongsByArtist = async (req, res, next) => {
     }
 
     const includeUnreleased = await resolveIncludeUnreleased(req, {
-      artistId: artist_id,
+      artistId: resolvedArtistId,
     });
 
-    const songs = await listSongsByArtist(artist_id, { includeUnreleased });
+    const songs = await listSongsByArtist(resolvedArtistId, {
+      includeUnreleased,
+    });
 
     return successResponse(res, songs);
   } catch (err) {
