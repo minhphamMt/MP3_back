@@ -15,6 +15,36 @@ import {
 import ROLES from "../constants/roles.js";
 import { getArtistByUserId } from "../services/artist.service.js";
 const parseGenreQuery = (query) => query.genre || query.genres || [];
+const resolveIncludeUnreleased = async ({ user }, { artistId, albumId } = {}) => {
+  if (!user) return false;
+
+  if (user.role === ROLES.ADMIN) {
+    return true;
+  }
+
+  if (user.role !== ROLES.ARTIST) {
+    return false;
+  }
+
+  const artist = await getArtistByUserId(user.id);
+  if (!artist) {
+    return false;
+  }
+
+  if (artistId && Number(artistId) === artist.id) {
+    return true;
+  }
+
+  if (albumId) {
+    const album = await getAlbumById(albumId, {
+      includeSongs: false,
+      includeUnreleased: true,
+    });
+    return album?.artist_id === artist.id;
+  }
+
+  return false;
+};
 
 export const getAlbums = async (req, res, next) => {
   try {
@@ -28,6 +58,10 @@ export const getAlbums = async (req, res, next) => {
       order = "desc",
     } = req.query;
 
+    const includeUnreleased = await resolveIncludeUnreleased(req, {
+      artistId: artistId || artist_id_param,
+    });
+
     const result = await listAlbums({
       page,
       limit,
@@ -35,6 +69,7 @@ export const getAlbums = async (req, res, next) => {
       status,
       artistId: artistId || artist_id_param,
       genres: parseGenreQuery(req.query),
+      includeUnreleased,
 
       // 🔴 THÊM 2 DÒNG NÀY
       sort,
@@ -49,9 +84,13 @@ export const getAlbums = async (req, res, next) => {
 
 export const getAlbum = async (req, res, next) => {
   try {
+    const includeUnreleased = await resolveIncludeUnreleased(req, {
+      albumId: req.params.id,
+    });
     const album = await getAlbumById(req.params.id, {
       status: req.query.status,
       genres: parseGenreQuery(req.query),
+      includeUnreleased,
     });
 
     if (!album) {
@@ -102,6 +141,7 @@ export const updateAlbumHandler = async (req, res, next) => {
 
       const existingAlbum = await getAlbumById(req.params.id, {
         includeSongs: false,
+        includeUnreleased: true,
       });
       if (!existingAlbum) {
         return errorResponse(res, "Album not found", 404);
@@ -133,6 +173,7 @@ export const deleteAlbumHandler = async (req, res, next) => {
 
       const existingAlbum = await getAlbumById(req.params.id, {
         includeSongs: false,
+        includeUnreleased: true,
       });
       if (!existingAlbum) {
         return errorResponse(res, "Album not found", 404);
@@ -177,7 +218,10 @@ export const uploadAlbumCoverHandler = async (req, res, next) => {
       return errorResponse(res, "No file uploaded", 400);
     }
 
-    const album = await getAlbumById(req.params.id, { includeSongs: false });
+    const album = await getAlbumById(req.params.id, {
+      includeSongs: false,
+      includeUnreleased: true,
+    });
     if (!album) {
       return errorResponse(res, "Album not found", 404);
     }

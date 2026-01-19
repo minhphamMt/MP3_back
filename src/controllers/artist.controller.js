@@ -12,6 +12,24 @@ import { errorResponse, successResponse } from "../utils/response.js";
 import ROLES from "../constants/roles.js";
 
 const parseGenreQuery = (query) => query.genre || query.genres || [];
+const resolveIncludeUnreleased = async ({ user }, artistId) => {
+  if (!user) return false;
+
+  if (user.role === ROLES.ADMIN) {
+    return true;
+  }
+
+  if (user.role !== ROLES.ARTIST) {
+    return false;
+  }
+
+  const artist = await getArtistByUserId(user.id);
+  if (!artist) {
+    return false;
+  }
+
+  return Number(artistId) === artist.id;
+};
 
 export const getArtists = async (req, res, next) => {
   try {
@@ -34,9 +52,11 @@ export const getArtists = async (req, res, next) => {
 
 export const getArtist = async (req, res, next) => {
   try {
+    const includeUnreleased = await resolveIncludeUnreleased(req, req.params.id);
     const artist = await getArtistById(req.params.id, {
       status: req.query.status,
       genres: parseGenreQuery(req.query),
+      includeUnreleased,
     });
 
     if (!artist) {
@@ -59,6 +79,7 @@ export const getMyArtistProfile = async (req, res, next) => {
     const detailed = await getArtistById(artist.id, {
       status: req.query.status,
       genres: parseGenreQuery(req.query),
+      includeUnreleased: true,
     });
 
     return successResponse(res, detailed);

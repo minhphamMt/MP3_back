@@ -1,16 +1,17 @@
 import { Router } from "express";
 import * as songController from "../controllers/song.controller.js";
 import authMiddleware from "../middlewares/auth.middleware.js";
-import rbacMiddleware from "../middlewares/rbac.middleware.js";
+import optionalAuthMiddleware from "../middlewares/optionalAuth.middleware.js";
 import ROLES from "../constants/roles.js";
 import { getLikedSongss } from "../controllers/song.controller.js";
 import { uploadSongAudio as uploadSongAudioFile } from "../middlewares/upload.middleware.js";
+import rbacMiddleware from "../middlewares/rbac.middleware.js";
 const router = Router();
 
-router.get("/", songController.getSongs);
-router.get("/art", songController.getSongsByArtist);
+router.get("/", optionalAuthMiddleware, songController.getSongs);
+router.get("/art", optionalAuthMiddleware, songController.getSongsByArtist);
 router.get("/liked", authMiddleware, songController.getLikedSongss);
-router.get("/:id", songController.getSong);
+router.get("/:id", optionalAuthMiddleware, songController.getSong);
 router.get("/:id/stats", songController.getSongEngagement);
 router.post(
   "/",

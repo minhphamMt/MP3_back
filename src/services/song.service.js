@@ -541,7 +541,7 @@ export const deleteSong = async (id) => {
     throw createError(404, "Song not found");
   }
 };
-export const listSongsByArtist = async (artistId) => {
+export const listSongsByArtist = async (artistId, { includeUnreleased = false } = {}) => {
   // 1. Lấy thông tin nghệ sĩ
   const [artistRows] = await db.query(
     `
@@ -583,6 +583,11 @@ export const listSongsByArtist = async (artistId) => {
     WHERE s.artist_id = ?
       AND s.status = 'approved'
       AND s.audio_path IS NOT NULL
+      ${
+        includeUnreleased
+          ? ""
+          : "AND (s.album_id IS NULL OR al.release_date IS NULL OR al.release_date <= NOW())"
+      }
     ORDER BY s.release_date DESC
     `,
     [artistId]

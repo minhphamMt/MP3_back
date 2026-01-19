@@ -1,6 +1,7 @@
 import { Router } from "express";
 import * as albumController from "../controllers/album.controller.js";
 import authMiddleware from "../middlewares/auth.middleware.js";
+import optionalAuthMiddleware from "../middlewares/optionalAuth.middleware.js";
 import rbacMiddleware from "../middlewares/rbac.middleware.js";
 import ROLES from "../constants/roles.js";
 import {
@@ -11,8 +12,8 @@ import {
 import { uploadAlbumCover } from "../middlewares/upload.middleware.js";
 const router = Router();
 // Public routes
-router.get("/", albumController.getAlbums);
-router.get("/:id", albumController.getAlbum);
+router.get("/", optionalAuthMiddleware, albumController.getAlbums);
+router.get("/:id", optionalAuthMiddleware, albumController.getAlbum);
 // Like and Unlike album
 router.post("/:id/like", authMiddleware, likeAlbumHandler);
 router.delete("/:id/like", authMiddleware, unlikeAlbumHandler);

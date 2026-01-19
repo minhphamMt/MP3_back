@@ -20,6 +20,36 @@ import { getArtistByUserId } from "../services/artist.service.js";
 import { getAlbumById } from "../services/album.service.js";
 
 const parseGenreQuery = (query) => query.genre || query.genres || [];
+const resolveIncludeUnreleased = async ({ user }, { artistId, albumId }) => {
+  if (!user) return false;
+
+  if (user.role === ROLES.ADMIN) {
+    return true;
+  }
+
+  if (user.role !== ROLES.ARTIST) {
+    return false;
+  }
+
+  const artist = await getArtistByUserId(user.id);
+  if (!artist) {
+    return false;
+  }
+
+  if (artistId && Number(artistId) === artist.id) {
+    return true;
+  }
+
+  if (albumId) {
+    const album = await getAlbumById(albumId, {
+      includeSongs: false,
+      includeUnreleased: true,
+    });
+    return album?.artist_id === artist.id;
+  }
+
+  return false;
+};
 
 export const getSongs = async (req, res, next) => {
   try {
@@ -32,6 +62,11 @@ export const getSongs = async (req, res, next) => {
       album_id,
     } = req.query;
 
+    const includeUnreleased = await resolveIncludeUnreleased(req, {
+      artistId: artistId || artist_id_param,
+      albumId: albumId || album_id,
+    });
+
     const result = await listSongs({
       page,
       limit,
@@ -40,6 +75,7 @@ export const getSongs = async (req, res, next) => {
       artistId: artistId || artist_id_param,
       albumId: albumId || album_id,
       genres: parseGenreQuery(req.query),
+      includeUnreleased,
     });
 
     return successResponse(res, result.items, result.meta);
@@ -50,9 +86,26 @@ export const getSongs = async (req, res, next) => {
 
 export const getSong = async (req, res, next) => {
   try {
+    let includeUnreleased = false;
+
+    if (req.user?.role === ROLES.ADMIN) {
+      includeUnreleased = true;
+    } else if (req.user?.role === ROLES.ARTIST) {
+      const artist = await getArtistByUserId(req.user.id);
+      if (artist) {
+        const ownedSong = await getSongById(req.params.id, {
+          includeUnreleased: true,
+        });
+        if (ownedSong?.artist_id === artist.id) {
+          return successResponse(res, ownedSong);
+        }
+      }
+    }
+
     const song = await getSongById(req.params.id, {
       status: req.query.status,
       genres: parseGenreQuery(req.query),
+      includeUnreleased,
     });
 
     if (!song) {
@@ -161,7 +214,9 @@ export const updateSongHandler = async (req, res, next) => {
         return errorResponse(res, "Artist profile not found", 403);
       }
 
-      const existingSong = await getSongById(req.params.id);
+      const existingSong = await getSongById(req.params.id, {
+        includeUnreleased: true,
+      });
       if (!existingSong) {
         return errorResponse(res, "Song not found", 404);
       }
@@ -204,7 +259,9 @@ export const uploadSongAudio = async (req, res, next) => {
         return errorResponse(res, "Artist profile not found", 403);
       }
 
-      const existingSong = await getSongById(req.params.id);
+      const existingSong = await getSongById(req.params.id, {
+        includeUnreleased: true,
+      });
       if (!existingSong) {
         return errorResponse(res, "Song not found", 404);
       }
@@ -234,7 +291,9 @@ export const deleteSongHandler = async (req, res, next) => {
         return errorResponse(res, "Artist profile not found", 403);
       }
 
-      const existingSong = await getSongById(req.params.id);
+      const existingSong = await getSongById(req.params.id, {
+        includeUnreleased: true,
+      });
       if (!existingSong) {
         return errorResponse(res, "Song not found", 404);
       }
@@ -260,7 +319,11 @@ export const getSongsByArtist = async (req, res, next) => {
       });
     }
 
-    const songs = await listSongsByArtist(artist_id);
+    const includeUnreleased = await resolveIncludeUnreleased(req, {
+      artistId: artist_id,
+    });
+
+    const songs = await listSongsByArtist(artist_id, { includeUnreleased });
 
     return successResponse(res, songs);
   } catch (err) {

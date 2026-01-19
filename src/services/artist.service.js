@@ -121,7 +121,10 @@ export const listArtists = async ({
   };
 };
 
-export const getArtistById = async (id, { status, genres = [] } = {}) => {
+export const getArtistById = async (
+  id,
+  { status, genres = [], includeUnreleased = false } = {}
+) => {
   const [artistRows] = await db.query(
     `
     SELECT * FROM artists WHERE id = ? LIMIT 1;
@@ -151,6 +154,11 @@ export const getArtistById = async (id, { status, genres = [] } = {}) => {
       }) AS song_count
     FROM albums al
     WHERE al.artist_id = ?
+    ${
+        includeUnreleased
+          ? ""
+          : "AND (al.release_date IS NULL OR al.release_date <= NOW())"
+      }
     ORDER BY al.id DESC;
   `,
     albumParams
@@ -164,6 +172,12 @@ export const getArtistById = async (id, { status, genres = [] } = {}) => {
     songParams.push(status);
   }
 
+  if (!includeUnreleased) {
+    songFilters.push(
+      "(s.album_id IS NULL OR al.release_date IS NULL OR al.release_date <= NOW())"
+    );
+  }
+  
   if (normalizedGenres.length > 0) {
     const placeholders = normalizedGenres.map(() => "?").join(",");
     songFilters.push(

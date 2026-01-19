@@ -2,6 +2,7 @@ import { Router } from "express";
 import * as artistController from "../controllers/artist.controller.js";
 import * as followController from "../controllers/artist-follow.controller.js";
 import authMiddleware from "../middlewares/auth.middleware.js";
+import optionalAuthMiddleware from "../middlewares/optionalAuth.middleware.js";
 import rbacMiddleware from "../middlewares/rbac.middleware.js";
 import ROLES from "../constants/roles.js";
 import { uploadArtistAvatar } from "../middlewares/upload.middleware.js";
@@ -18,7 +19,7 @@ router.post(
   uploadArtistAvatar,
   artistController.uploadArtistAvatar
 );
-router.get("/:id", artistController.getArtist);
+router.get("/:id", optionalAuthMiddleware, artistController.getArtist);
 //User routes
 router.post(
   "/:id/follow",
