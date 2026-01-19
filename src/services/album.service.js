@@ -65,12 +65,20 @@ params.push(artistId);
 
 
 const sql = `
-SELECT a.*
-FROM albums a
-${where}
-ORDER BY ${sortColumn} ${sortOrder}
-LIMIT ? OFFSET ?
+  SELECT
+    a.*,
+    (
+      SELECT COUNT(*)
+      FROM songs s
+      WHERE s.album_id = a.id
+      ${status ? "AND s.status = ?" : ""}
+    ) AS song_count
+  FROM albums a
+  ${where}
+  ORDER BY ${sortColumn} ${sortOrder}
+  LIMIT ? OFFSET ?
 `;
+
 
 
 params.push(limit, offset);
