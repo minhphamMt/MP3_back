@@ -19,8 +19,15 @@ export const refreshSchema = {
   },
 };
 
+export const firebaseLoginSchema = {
+  body: {
+    idToken: { type: "string", required: true },
+  },
+};
+
 export default {
   registerSchema,
   loginSchema,
   refreshSchema,
+  firebaseLoginSchema,
 };

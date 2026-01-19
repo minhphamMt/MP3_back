@@ -7,15 +7,29 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// path tới file service account
-const serviceAccountPath = path.resolve(
+const defaultServiceAccountPath = path.resolve(
   __dirname,
   "../../firebase-service-account.json"
 );
 
-const serviceAccount = JSON.parse(
-  fs.readFileSync(serviceAccountPath, "utf8")
-);
+const resolveServiceAccount = () => {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  }
+
+  const serviceAccountPath =
+    process.env.FIREBASE_SERVICE_ACCOUNT_PATH || defaultServiceAccountPath;
+
+  if (!fs.existsSync(serviceAccountPath)) {
+    throw new Error(
+      "Firebase service account not found. Set FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_SERVICE_ACCOUNT_PATH."
+    );
+  }
+
+  return JSON.parse(fs.readFileSync(serviceAccountPath, "utf8"));
+};
+
+const serviceAccount = resolveServiceAccount();
 
 if (!admin.apps.length) {
   admin.initializeApp({

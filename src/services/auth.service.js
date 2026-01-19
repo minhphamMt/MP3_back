@@ -156,11 +156,11 @@ export const registerUser = async ({ display_name, name, email, password }) => {
 export const loginUser = async ({ email, password }) => {
   const [rows] = await db.query("SELECT * FROM users WHERE email = ?", [email]);
   const user = rows[0];
-  if (user.auth_provider === "firebase") {
-  throw createError(400, "Use Firebase login");
-  }
   if (!user) {
     throw createError(401, "Invalid credentials");
+  }
+  if (user.auth_provider === "firebase") {
+    throw createError(400, "Use Firebase login");
   }
 
   if (!user.is_active) {
