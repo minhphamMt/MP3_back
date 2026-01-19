@@ -230,24 +230,46 @@ meta: { page, limit },
 };
 };
 
-export const getSongById = async (id, { includeUnreleased = false } = {}) => {
-const [rows] = await db.query(
-`
-SELECT s.*, ar.name AS artist_name, al.title AS album_title, al.release_date AS album_release_date
-FROM songs s
-LEFT JOIN artists ar ON ar.id = s.artist_id
-LEFT JOIN albums al ON al.id = s.album_id
-WHERE s.id = ?
-AND s.status = 'approved'
-${includeUnreleased ? "" : "AND (s.album_id IS NULL OR al.release_date <= NOW())"}
-LIMIT 1;
-`,
-[id]
-);
+export const getSongById = async (
+  id,
+  { includeUnreleased = false } = {}
+) => {
+  const filters = ["s.id = ?"];
+  const params = [id];
 
+  // 🔐 USER → chỉ thấy approved
+  if (!includeUnreleased) {
+    filters.push("s.status = 'approved'");
+  }
 
-return rows[0] || null;
+  // USER không thấy album chưa phát hành
+  if (!includeUnreleased) {
+    filters.push(
+      "(s.album_id IS NULL OR al.release_date IS NULL OR al.release_date <= NOW())"
+    );
+  }
+
+  const whereClause = `WHERE ${filters.join(" AND ")}`;
+
+  const [rows] = await db.query(
+    `
+    SELECT
+      s.*,
+      ar.name AS artist_name,
+      al.title AS album_title,
+      al.release_date AS album_release_date
+    FROM songs s
+    LEFT JOIN artists ar ON ar.id = s.artist_id
+    LEFT JOIN albums al ON al.id = s.album_id
+    ${whereClause}
+    LIMIT 1;
+    `,
+    params
+  );
+
+  return rows[0] || null;
 };
+
 export const likeSong = async (songId, userId) => {
   const [songs] = await db.query("SELECT id FROM songs WHERE id = ?", [songId]);
   if (!songs[0]) {

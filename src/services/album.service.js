@@ -111,12 +111,13 @@ let songs = [];
 
 if (includeSongs) {
 const songFilters = [
-"s.album_id = ?",
-"s.status = 'approved'",
-includeUnreleased
-? "1=1"
-: "(al.release_date IS NULL OR al.release_date <= NOW())",
+  "s.album_id = ?",
+  includeUnreleased ? "1=1" : "s.status = 'approved'", 
+  includeUnreleased
+    ? "1=1"
+    : "(al.release_date IS NULL OR al.release_date <= NOW())",
 ];
+
 
 
 const [songRows] = await db.query(

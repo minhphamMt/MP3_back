@@ -228,9 +228,11 @@ export const updateSongHandler = async (req, res, next) => {
       delete payload.artist_id;
 
       if (payload.album_id) {
-        const album = await getAlbumById(payload.album_id, {
+       const album = await getAlbumById(payload.album_id, {
           includeSongs: false,
-        });
+          includeUnreleased: true, 
+});
+
         if (!album) {
           return errorResponse(res, "Album not found", 404);
         }
