@@ -10,6 +10,7 @@ import {
 const router = Router();
 
 router.post("/register", validate(registerSchema), authController.register);
+router.post("/firebase", authController.firebaseLogin);
 router.post("/login", validate(loginSchema), authController.login);
 router.post("/refresh", validate(refreshSchema), authController.refresh);
 

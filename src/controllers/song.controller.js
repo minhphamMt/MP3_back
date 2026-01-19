@@ -168,8 +168,14 @@ export const getSongEngagement = async (req, res, next) => {
 export const createSongHandler = async (req, res, next) => {
   try {
     const payload = { ...req.body };
-    if (req.file) {
-      payload.audio_path = `/uploads/music/${req.file.filename}`;
+    const audioFile = req.files?.audio?.[0];
+    const coverFile = req.files?.cover?.[0];
+
+    if (audioFile) {
+      payload.audio_path = `/uploads/music/${audioFile.filename}`;
+    }
+    if (coverFile) {
+      payload.cover_url = `/uploads/songs/${coverFile.filename}`;
     }
 
     if (req.user?.role === ROLES.ARTIST) {
@@ -204,8 +210,14 @@ export const createSongHandler = async (req, res, next) => {
 export const updateSongHandler = async (req, res, next) => {
   try {
     const payload = { ...req.body };
-    if (req.file) {
-      payload.audio_path = `/uploads/music/${req.file.filename}`;
+    const audioFile = req.files?.audio?.[0];
+    const coverFile = req.files?.cover?.[0];
+
+    if (audioFile) {
+      payload.audio_path = `/uploads/music/${audioFile.filename}`;
+    }
+    if (coverFile) {
+      payload.cover_url = `/uploads/songs/${coverFile.filename}`;
     }
 
     if (req.user?.role === ROLES.ARTIST) {
@@ -278,6 +290,41 @@ export const uploadSongAudio = async (req, res, next) => {
     return res.json({
       message: "Song audio uploaded successfully",
       audio_path: audioPath,
+      song,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const uploadSongCover = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return errorResponse(res, "No file uploaded", 400);
+    }
+
+    const existingSong = await getSongById(req.params.id, {
+      includeUnreleased: true,
+    });
+    if (!existingSong) {
+      return errorResponse(res, "Song not found", 404);
+    }
+
+    if (req.user?.role === ROLES.ARTIST) {
+      const artist = await getArtistByUserId(req.user.id);
+      if (!artist) {
+        return errorResponse(res, "Artist profile not found", 403);
+      }
+      if (existingSong.artist_id !== artist.id) {
+        return errorResponse(res, "Forbidden", 403);
+      }
+    }
+
+    const coverUrl = `/uploads/songs/${req.file.filename}`;
+    const song = await updateSongMedia(req.params.id, { coverUrl });
+
+    return successResponse(res, {
+      cover_url: coverUrl,
       song,
     });
   } catch (error) {
@@ -364,6 +411,7 @@ export default {
   createSongHandler,
   updateSongHandler,
   uploadSongAudio,
+  uploadSongCover,
   deleteSongHandler,
   getSongsByArtist,
   getLikedSongss
