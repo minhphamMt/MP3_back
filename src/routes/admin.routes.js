@@ -8,7 +8,16 @@ const router = Router();
 
 router.use(authMiddleware, rbacMiddleware(ROLES.ADMIN));
 
+router.get("/reports/overview", adminController.getReportOverview);
+router.get("/search", adminController.searchAdmin);
+router.get("/genres", adminController.listGenresRequest);
+router.post("/genres", adminController.createGenreRequest);
+router.put("/genres/:id", adminController.updateGenreRequest);
+router.delete("/genres/:id", adminController.deleteGenreRequest);
 router.patch("/songs/:id/review", adminController.reviewSongRequest);
+router.patch("/songs/:id/approve", adminController.approveSongRequest);
+router.patch("/songs/:id/block", adminController.blockSongRequest);
 router.patch("/users/:id/active", adminController.toggleUserActive);
+router.patch("/users/:id/role", adminController.updateUserRole);
 
 export default router;

@@ -110,6 +110,10 @@ export const createAlbumHandler = async (req, res, next) => {
       payload.cover_url = `/uploads/albums/${req.file.filename}`;
     }
 
+    if (req.user?.role === ROLES.ADMIN && !payload.artist_id) {
+      return errorResponse(res, "artist_id is required for admin", 400);
+    }
+    
     if (req.user?.role === ROLES.ARTIST) {
       const artist = await getArtistByUserId(req.user.id);
       if (!artist) {

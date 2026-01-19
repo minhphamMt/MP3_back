@@ -184,14 +184,19 @@ artistId,
 albumId,
 includeUnreleased = false,
 }) => {
-const filters = ["s.status = 'approved'"];
+const filters = ["1=1"];
 const params = [];
 
 
 if (!includeUnreleased) {
+filters.push("s.status = 'approved'");
 filters.push(
 "(s.album_id IS NULL OR al.release_date IS NULL OR al.release_date <= NOW())"
 );
+}
+if (includeUnreleased && status) {
+filters.push("s.status = ?");
+params.push(status);
 }
 
 

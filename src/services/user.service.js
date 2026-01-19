@@ -1,5 +1,6 @@
 import bcrypt from "bcrypt";
 import db from "../config/db.js";
+import ROLES from "../constants/roles.js";
 
 const SALT_ROUNDS = 10;
 
@@ -130,6 +131,27 @@ export const setActiveStatus = async (id, isActive) => {
   return getUserById(id);
 };
 
+export const setUserRole = async (id, role) => {
+  if (!role) {
+    throw createError(400, "role is required");
+  }
+
+  const allowedRoles = Object.values(ROLES);
+  if (!allowedRoles.includes(role)) {
+    throw createError(400, "Invalid role");
+  }
+
+  const [rows] = await db.query("SELECT id FROM users WHERE id = ?", [id]);
+  const user = rows[0];
+
+  if (!user) {
+    throw createError(404, "User not found");
+  }
+
+  await db.query("UPDATE users SET role = ? WHERE id = ?", [role, id]);
+  return getUserById(id);
+};
+
 export default {
   getAllUsers,
   getUserById,
@@ -137,4 +159,5 @@ export default {
   deleteUser,
   changePassword,
   setActiveStatus,
+  setUserRole,
 };

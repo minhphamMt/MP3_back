@@ -61,6 +61,34 @@ const searchSongs = async (keyword, { limit, offset, userId }) => {
 
   return rows;
 };
+const searchSongsAdmin = async (keyword, { limit, offset }) => {
+  const params = [
+    `${keyword}%`,
+    `%${keyword}%`,
+    `%${keyword}%`,
+    limit,
+    offset,
+  ];
+  const [rows] = await db.query(
+    `
+    SELECT
+      s.*,
+      (
+        (s.title LIKE ?) * 5 +
+        (s.title LIKE ?) * 3 +
+        (s.play_count * 0.001) +
+        ((SELECT COUNT(*) FROM song_likes sl WHERE sl.song_id = s.id) * 0.01)
+      ) AS score
+    FROM songs s
+    WHERE s.title LIKE ?
+    ORDER BY score DESC
+    LIMIT ? OFFSET ?
+    `,
+    params
+  );
+
+  return rows;
+};
 const searchArtists = async (keyword, { limit, offset }) => {
   const [rows] = await db.query(
     `
@@ -85,6 +113,41 @@ const searchArtists = async (keyword, { limit, offset }) => {
 
   return rows;
 };
+const searchUsers = async (keyword, { limit, offset }) => {
+  const [rows] = await db.query(
+    `
+    SELECT
+      u.id,
+      u.display_name,
+      u.email,
+      u.role,
+      u.is_active,
+      (
+        (u.display_name LIKE ?) * 5 +
+        (u.display_name LIKE ?) * 3 +
+        (u.email LIKE ?) * 2 +
+        (u.email LIKE ?) * 1
+      ) AS score
+    FROM users u
+    WHERE u.display_name LIKE ? OR u.email LIKE ?
+    ORDER BY score DESC
+    LIMIT ? OFFSET ?
+    `,
+    [
+      `${keyword}%`,
+      `%${keyword}%`,
+      `${keyword}%`,
+      `%${keyword}%`,
+      `%${keyword}%`,
+      `%${keyword}%`,
+      limit,
+      offset,
+    ]
+  );
+
+  return rows;
+};
+
 const searchAlbums = async (keyword, { limit, offset }) => {
   const [rows] = await db.query(
     `
@@ -127,7 +190,24 @@ export const searchEntities = async (keyword, options) => {
   };
 };
 
+export const searchAdminEntities = async (keyword, options) => {
+  const [songs, artists, albums, users] = await Promise.all([
+    searchSongsAdmin(keyword, options),
+    searchArtists(keyword, options),
+    searchAlbums(keyword, options),
+    searchUsers(keyword, options),
+  ]);
 
+  return {
+    items: {
+      songs,
+      artists,
+      albums,
+      users,
+    },
+    meta: buildPaginationMeta(options.page, options.limit),
+  };
+};
 
 export const saveSearchHistory = async (keyword, userId) => {
   if (!keyword || !userId) return;
@@ -211,6 +291,7 @@ export const listSearchHistory = async (userId, { page, limit, offset }) => {
 
 export default {
   searchEntities,
+  searchAdminEntities,
   saveSearchHistory,
   listSearchHistory,
 };
