@@ -157,7 +157,7 @@ export const getArtistById = async (
     ${
         includeUnreleased
           ? ""
-          : "AND (al.release_date IS NULL OR al.release_date <= NOW())"
+          : "AND al.release_date IS NOT NULL AND al.release_date <= NOW()"
       }
     ORDER BY al.id DESC;
   `,
@@ -170,12 +170,13 @@ export const getArtistById = async (
   if (status) {
     songFilters.push("s.status = ?");
     songParams.push(status);
+    } else if (!includeUnreleased) {
+    songFilters.push("s.status = 'approved'");
   }
 
   if (!includeUnreleased) {
-    songFilters.push(
-      "(s.album_id IS NULL OR al.release_date IS NULL OR al.release_date <= NOW())"
-    );
+    songFilters.push("s.release_date IS NOT NULL");
+    songFilters.push("s.release_date <= NOW()");
   }
   
   if (normalizedGenres.length > 0) {

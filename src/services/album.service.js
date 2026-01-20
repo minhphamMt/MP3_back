@@ -48,7 +48,7 @@ const params = [];
 
 
 if (!includeUnreleased) {
-where += " AND (a.release_date IS NULL OR a.release_date <= NOW())";
+where += " AND a.release_date IS NOT NULL AND a.release_date <= NOW()";
 }
 
 
@@ -103,7 +103,7 @@ SELECT al.*, ar.name AS artist_name
 FROM albums al
 LEFT JOIN artists ar ON ar.id = al.artist_id
 WHERE al.id = ?
-${includeUnreleased ? "" : "AND (al.release_date IS NULL OR al.release_date <= NOW())"}
+${includeUnreleased ? "" : "AND al.release_date IS NOT NULL AND al.release_date <= NOW()"}
 LIMIT 1;
 `,
 [id]
@@ -120,10 +120,9 @@ let songs = [];
 if (includeSongs) {
 const songFilters = [
   "s.album_id = ?",
-  includeUnreleased ? "1=1" : "s.status = 'approved'", 
-  includeUnreleased
-    ? "1=1"
-    : "(al.release_date IS NULL OR al.release_date <= NOW())",
+  includeUnreleased ? "1=1" : "s.status = 'approved'",
+  includeUnreleased ? "1=1" : "s.release_date IS NOT NULL",
+  includeUnreleased ? "1=1" : "s.release_date <= NOW()",
 ];
 
 

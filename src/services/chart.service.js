@@ -15,6 +15,9 @@ export const getZingChart = async () => {
       ar.name AS artist_name
     FROM songs s
     LEFT JOIN artists ar ON ar.id = s.artist_id
+    WHERE s.status = 'approved'
+    AND s.release_date IS NOT NULL
+    AND s.release_date <= NOW()
     ORDER BY s.play_count DESC
     LIMIT 10
   `);
@@ -55,6 +58,8 @@ export const getNewReleaseChart = async () => {
     LEFT JOIN artists ar ON ar.id = s.artist_id
     LEFT JOIN albums al ON al.id = s.album_id
     WHERE s.status = 'approved'
+    AND s.release_date IS NOT NULL
+    AND s.release_date <= NOW()
     ORDER BY s.release_date DESC
     LIMIT 20
   `);
@@ -98,6 +103,9 @@ export const getTop100Chart = async () => {
       ar.name AS artist_name
     FROM songs s
     LEFT JOIN artists ar ON ar.id = s.artist_id
+    WHERE s.status = 'approved'
+      AND s.release_date IS NOT NULL
+      AND s.release_date <= NOW()
     ORDER BY s.play_count DESC
     LIMIT 100
   `);
@@ -164,6 +172,8 @@ export const getRegionChart = async (regionKey, limit = 5) => {
     LEFT JOIN albums al ON al.id = s.album_id
     WHERE g.name IN (${placeholders})
       AND s.status = 'approved'
+      AND s.release_date IS NOT NULL
+      AND s.release_date <= NOW()
     GROUP BY s.id
     ORDER BY s.play_count DESC
     LIMIT ?;
@@ -228,6 +238,8 @@ export const getTopWeeklySongs = async (limit = 5) => {
     WHERE sp.period_type = 'week'
       AND sp.period_start = DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
       AND s.status = 'approved'
+      AND s.release_date IS NOT NULL
+      AND s.release_date <= NOW()
     ORDER BY sp.play_count DESC
     LIMIT ?
     `,
@@ -293,6 +305,8 @@ export const getTop50SongsByGenres = async () => {
     JOIN song_genres sg ON sg.genre_id = g.id
     JOIN songs s ON s.id = sg.song_id
     WHERE s.status = 'approved'
+    AND s.release_date IS NOT NULL
+    AND s.release_date <= NOW()
     GROUP BY g.id
     HAVING song_count >= 50
   `);
@@ -328,6 +342,8 @@ export const getTop50SongsByGenres = async () => {
       WHERE
         sg.genre_id = ?
         AND s.status = 'approved'
+        AND s.release_date IS NOT NULL
+        AND s.release_date <= NOW()
       ORDER BY s.play_count DESC
       LIMIT 50
       `,

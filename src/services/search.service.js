@@ -52,6 +52,8 @@ const searchSongs = async (keyword, { limit, offset, userId }) => {
       ) AS score
     FROM songs s
     WHERE s.status = 'approved'
+    AND s.release_date IS NOT NULL
+      AND s.release_date <= NOW()
       AND s.title LIKE ?
     ORDER BY score DESC
     LIMIT ? OFFSET ?
@@ -157,6 +159,8 @@ const searchAlbums = async (keyword, { limit, offset }) => {
       (al.title LIKE ?) * 3 AS score
     FROM albums al
     WHERE al.title LIKE ?
+    AND al.release_date IS NOT NULL
+    AND al.release_date <= NOW()
     ORDER BY score DESC
     LIMIT ? OFFSET ?
     `,

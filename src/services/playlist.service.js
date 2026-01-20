@@ -105,6 +105,8 @@ export const getPlaylistById = async (id) => {
     LEFT JOIN albums al ON al.id = s.album_id
     WHERE ps.playlist_id = ?
       AND s.status = 'approved'
+      AND s.release_date IS NOT NULL
+      AND s.release_date <= NOW()
     ORDER BY ps.position ASC
     `,
     [id]

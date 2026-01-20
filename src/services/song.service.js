@@ -201,9 +201,8 @@ const params = [];
 
 if (!includeUnreleased) {
 filters.push("s.status = 'approved'");
-filters.push(
-"(s.album_id IS NULL OR al.release_date IS NULL OR al.release_date <= NOW())"
-);
+filters.push("s.release_date IS NOT NULL");
+filters.push("s.release_date <= NOW()");
 }
 if (includeUnreleased && status) {
 filters.push("s.status = ?");
@@ -258,11 +257,9 @@ export const getSongById = async (
     filters.push("s.status = 'approved'");
   }
 
-  // USER không thấy album chưa phát hành
   if (!includeUnreleased) {
-    filters.push(
-      "(s.album_id IS NULL OR al.release_date IS NULL OR al.release_date <= NOW())"
-    );
+    filters.push("s.release_date IS NOT NULL");
+    filters.push("s.release_date <= NOW()");
   }
 
   const whereClause = `WHERE ${filters.join(" AND ")}`;
@@ -287,7 +284,17 @@ export const getSongById = async (
 };
 
 export const likeSong = async (songId, userId) => {
-  const [songs] = await db.query("SELECT id FROM songs WHERE id = ?", [songId]);
+  const [songs] = await db.query(
+    `
+    SELECT id
+    FROM songs
+    WHERE id = ?
+      AND status = 'approved'
+      AND release_date IS NOT NULL
+      AND release_date <= NOW()
+    `,
+    [songId]
+  );
   if (!songs[0]) {
     throw createError(404, "Song not found");
   }
@@ -345,20 +352,16 @@ export const recordSongPlay = async (songId, userId, duration = null) => {
    * 0️⃣ CHẶN NHẠC CHƯA PHÁT HÀNH
    * - Bài phải tồn tại
    * - status = approved
-   * - nếu có album thì album.release_date <= NOW()
+   * - release_date đã tới
    */
   const [songRows] = await db.query(
     `
     SELECT s.id
     FROM songs s
-    LEFT JOIN albums al ON al.id = s.album_id
     WHERE s.id = ?
       AND s.status = 'approved'
-      AND (
-        s.album_id IS NULL
-        OR al.release_date IS NULL
-        OR al.release_date <= NOW()
-      )
+      AND s.release_date IS NOT NULL
+      AND s.release_date <= NOW()
     LIMIT 1
     `,
     [songId]
@@ -624,7 +627,7 @@ export const listSongsByArtist = async (
       ${
         includeUnreleased
           ? ""
-          : "AND (s.album_id IS NULL OR al.release_date IS NULL OR al.release_date <= NOW())"
+          : "AND s.release_date IS NOT NULL AND s.release_date <= NOW()"
       }
     ORDER BY s.release_date DESC
     `,
@@ -670,6 +673,9 @@ export const getLikedSongs= async (userId) => {
     LEFT JOIN artists ar ON ar.id = s.artist_id
     LEFT JOIN albums al ON al.id = s.album_id
     WHERE sl.user_id = ?
+    AND s.status = 'approved'
+      AND s.release_date IS NOT NULL
+      AND s.release_date <= NOW()
     ORDER BY sl.liked_at DESC
     `,
     [userId]
