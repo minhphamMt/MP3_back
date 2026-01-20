@@ -158,19 +158,30 @@ export const reviewSong = async (
     throw createError(404, "Song not found");
   }
 
-  await db.query(
-    `
-    UPDATE songs
-     SET status = ?, reviewed_by = ?, reject_reason = ?, reviewed_at = CURRENT_TIMESTAMP
-    WHERE id = ?
+await db.query(
+  `
+  UPDATE songs
+  SET
+    status = ?,
+    reviewed_by = ?,
+    reject_reason = ?,
+    reviewed_at = CURRENT_TIMESTAMP,
+    release_date = CASE
+      WHEN ? = 'approved' AND release_date IS NULL
+      THEN CURRENT_TIMESTAMP
+      ELSE release_date
+    END
+  WHERE id = ?
   `,
-    [
-      status,
-      reviewerId || null,
-      status === SONG_STATUS.REJECTED ? rejectReason || null : null,
-      songId,
-    ]
-  );
+  [
+    status,
+    reviewerId || null,
+    status === SONG_STATUS.REJECTED ? rejectReason || null : null,
+    status,
+    songId,
+  ]
+);
+
 
   return getSongById(songId);
 };
@@ -572,7 +583,6 @@ export const listSongsByArtist = async (
   artistId,
   { includeUnreleased = false } = {}
 ) => {
-  // 1. Lấy thông tin nghệ sĩ
   const [artistRows] = await db.query(
     `
     SELECT
@@ -592,12 +602,9 @@ export const listSongsByArtist = async (
     `,
     [artistId]
   );
-
   if (!artistRows[0]) {
     throw new Error("Artist not found");
   }
-
-  // 2. Lấy danh sách bài hát
   const [songRows] = await db.query(
     `
     SELECT
