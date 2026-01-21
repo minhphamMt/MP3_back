@@ -152,6 +152,26 @@ export const setUserRole = async (id, role) => {
   return getUserById(id);
 };
 
+export const setUserPassword = async (id, newPassword) => {
+  if (!newPassword) {
+    throw createError(400, "password is required");
+  }
+
+  const [rows] = await db.query("SELECT id FROM users WHERE id = ?", [id]);
+  const user = rows[0];
+
+  if (!user) {
+    throw createError(404, "User not found");
+  }
+
+  const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
+  await db.query("UPDATE users SET password_hash = ? WHERE id = ?", [
+    hashedPassword,
+    id,
+  ]);
+
+  return getUserById(id);
+};
 export default {
   getAllUsers,
   getUserById,
@@ -160,4 +180,5 @@ export default {
   changePassword,
   setActiveStatus,
   setUserRole,
+  setUserPassword,
 };

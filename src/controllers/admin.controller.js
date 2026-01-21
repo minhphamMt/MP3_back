@@ -1,5 +1,11 @@
-import { reviewSong } from "../services/song.service.js";
-import { setActiveStatus, setUserRole } from "../services/user.service.js";
+import { getSongById, listSongs, reviewSong, updateSong } from "../services/song.service.js";
+import {
+  getUserById,
+  setActiveStatus,
+  setUserPassword,
+  setUserRole,
+  updateUserProfile,
+} from "../services/user.service.js";
 import { logger } from "../utils/logger.js";
 import { successResponse } from "../utils/response.js";
 import SONG_STATUS from "../constants/song-status.js";
@@ -15,6 +21,8 @@ import {
   getSystemOverview,
   getWeeklyTopSongs,
 } from "../services/admin.service.js";
+
+const parseGenreQuery = (query) => query.genre || query.genres || [];
 
 const createHttpError = (status, message) => {
   const err = new Error(message);
@@ -151,6 +159,45 @@ export const updateUserRole = async (req, res, next) => {
   }
 };
 
+export const updateUserRequest = async (req, res, next) => {
+  try {
+    const { role, password } = req.body;
+    const displayName = req.body.display_name ?? req.body.name;
+
+    if (role === undefined && displayName === undefined && password === undefined) {
+      return next(createHttpError(400, "No user updates provided"));
+    }
+
+    if (displayName !== undefined) {
+      await updateUserProfile(req.params.id, { display_name: displayName });
+    }
+
+    if (role !== undefined) {
+      await setUserRole(req.params.id, role);
+    }
+
+    if (password !== undefined) {
+      await setUserPassword(req.params.id, password);
+    }
+
+    const user = await getUserById(req.params.id);
+
+    logger.info("User updated by admin", {
+      adminId: req.user.id,
+      userId: req.params.id,
+      role,
+      hasPasswordChange: password !== undefined,
+    });
+
+    return res.json({
+      message: "User updated successfully",
+      user,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 export const listGenresRequest = async (req, res, next) => {
   try {
     const { page, limit, offset } = getPaginationParams(req.query);
@@ -228,16 +275,66 @@ export const getReportOverview = async (req, res, next) => {
   }
 };
 
+export const listSongsRequest = async (req, res, next) => {
+  try {
+    const { page, limit, offset } = getPaginationParams(req.query);
+    const keyword = req.query.q || req.query.keyword;
+    const { status, artistId, artist_id, albumId, album_id } = req.query;
+
+    const result = await listSongs({
+      page,
+      limit,
+      offset,
+      status,
+      artistId: artistId || artist_id,
+      albumId: albumId || album_id,
+      genres: parseGenreQuery(req.query),
+      includeUnreleased: true,
+      keyword,
+    });
+
+    return successResponse(res, result.items, result.meta);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const getSongRequest = async (req, res, next) => {
+  try {
+    const song = await getSongById(req.params.id, { includeUnreleased: true });
+    if (!song) {
+      return next(createHttpError(404, "Song not found"));
+    }
+
+    return successResponse(res, song);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const updateSongRequest = async (req, res, next) => {
+  try {
+    const song = await updateSong(req.params.id, req.body);
+    return successResponse(res, song);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 export default {
   reviewSongRequest,
   approveSongRequest,
   blockSongRequest,
   toggleUserActive,
   updateUserRole,
+  updateUserRequest,
   listGenresRequest,
   createGenreRequest,
   updateGenreRequest,
   deleteGenreRequest,
   searchAdmin,
   getReportOverview,
+  listSongsRequest,
+  getSongRequest,
+  updateSongRequest,
 };

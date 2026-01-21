@@ -1,6 +1,5 @@
 import db from "../config/db.js";
 import SONG_STATUS from "../constants/song-status.js";
-import { buildPaginationMeta } from "../utils/pagination.js";
 import { recordListeningHistory } from "./history.service.js";
 
 const createError = (status, message) => {
@@ -187,62 +186,92 @@ await db.query(
 };
 export const listSongs = async ({
 page,
-limit,
-offset,
-genres = [],
-status,
-artistId,
-albumId,
-includeUnreleased = false,
+  limit,
+  offset,
+  genres = [],
+  status,
+  artistId,
+  albumId,
+  includeUnreleased = false,
+  keyword,
 }) => {
 const filters = ["1=1"];
-const params = [];
+  const params = [];
 
+  if (keyword) {
+    const normalizedKeyword = `%${keyword}%`;
+    filters.push(
+      "(s.title LIKE ? OR ar.name LIKE ? OR al.title LIKE ?)"
+    );
+    params.push(normalizedKeyword, normalizedKeyword, normalizedKeyword);
+  }
 
-if (!includeUnreleased) {
-filters.push("s.status = 'approved'");
-filters.push("s.release_date IS NOT NULL");
-filters.push("s.release_date <= NOW()");
-}
-if (includeUnreleased && status) {
-filters.push("s.status = ?");
-params.push(status);
-}
+  if (!includeUnreleased) {
+    filters.push("s.status = 'approved'");
+    filters.push("s.release_date IS NOT NULL");
+    filters.push("s.release_date <= NOW()");
+  }
+  if (includeUnreleased && status) {
+    filters.push("s.status = ?");
+    params.push(status);
+  }
 
+  const normalizedGenres = normalizeGenres(genres);
+  if (normalizedGenres.length) {
+    const placeholders = normalizedGenres.map(() => "?").join(",");
+    filters.push(
+      `EXISTS (
+        SELECT 1
+        FROM song_genres sg
+        JOIN genres g ON g.id = sg.genre_id
+        WHERE sg.song_id = s.id
+          AND g.name IN (${placeholders})
+      )`
+    );
+    params.push(...normalizedGenres);
+  }
 
-if (artistId) {
-filters.push("s.artist_id = ?");
-params.push(artistId);
-}
+  if (artistId) {
+    filters.push("s.artist_id = ?");
+    params.push(artistId);
+  }
 
+  if (albumId) {
+    filters.push("s.album_id = ?");
+    params.push(albumId);
+  }
 
-if (albumId) {
-filters.push("s.album_id = ?");
-params.push(albumId);
-}
+  const whereClause = `WHERE ${filters.join(" AND ")}`;
 
+  const [rows] = await db.query(
+    `
+    SELECT
+      s.*,
+      ar.name AS artist_name,
+      al.title AS album_title,
+      (
+        SELECT GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ',')
+        FROM song_genres sg
+        JOIN genres g ON g.id = sg.genre_id
+        WHERE sg.song_id = s.id
+      ) AS genres
+    FROM songs s
+    LEFT JOIN artists ar ON ar.id = s.artist_id
+    LEFT JOIN albums al ON al.id = s.album_id
+    ${whereClause}
+    ORDER BY s.release_date DESC
+    LIMIT ? OFFSET ?
+    `,
+    [...params, limit, offset]
+  );
 
-const whereClause = `WHERE ${filters.join(" AND ")}`;
-
-
-const [rows] = await db.query(
-`
-SELECT s.*, ar.name AS artist_name, al.title AS album_title
-FROM songs s
-LEFT JOIN artists ar ON ar.id = s.artist_id
-LEFT JOIN albums al ON al.id = s.album_id
-${whereClause}
-ORDER BY s.release_date DESC
-LIMIT ? OFFSET ?
-`,
-[...params, limit, offset]
-);
-
-
-return {
-items: rows,
-meta: { page, limit },
-};
+  return {
+    items: rows.map((row) => ({
+      ...row,
+      genres: parseGenreString(row.genres),
+    })),
+    meta: { page, limit },
+  };
 };
 
 export const getSongById = async (
@@ -270,7 +299,13 @@ export const getSongById = async (
       s.*,
       ar.name AS artist_name,
       al.title AS album_title,
-      al.release_date AS album_release_date
+      al.release_date AS album_release_date,
+      (
+        SELECT GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ',')
+        FROM song_genres sg
+        JOIN genres g ON g.id = sg.genre_id
+        WHERE sg.song_id = s.id
+      ) AS genres
     FROM songs s
     LEFT JOIN artists ar ON ar.id = s.artist_id
     LEFT JOIN albums al ON al.id = s.album_id
@@ -280,7 +315,12 @@ export const getSongById = async (
     params
   );
 
-  return rows[0] || null;
+  if (!rows[0]) return null;
+
+  return {
+    ...rows[0],
+    genres: parseGenreString(rows[0].genres),
+  };
 };
 
 export const likeSong = async (songId, userId) => {

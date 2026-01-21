@@ -17,7 +17,11 @@ router.delete("/genres/:id", adminController.deleteGenreRequest);
 router.patch("/songs/:id/review", adminController.reviewSongRequest);
 router.patch("/songs/:id/approve", adminController.approveSongRequest);
 router.patch("/songs/:id/block", adminController.blockSongRequest);
+router.get("/songs", adminController.listSongsRequest);
+router.get("/songs/:id", adminController.getSongRequest);
+router.put("/songs/:id", adminController.updateSongRequest);
 router.patch("/users/:id/active", adminController.toggleUserActive);
 router.patch("/users/:id/role", adminController.updateUserRole);
+router.patch("/users/:id", adminController.updateUserRequest);
 
 export default router;
