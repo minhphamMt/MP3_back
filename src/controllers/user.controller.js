@@ -152,7 +152,6 @@ export const uploadUserAvatarByAdmin = async (req, res, next) => {
     const user = await updateUserProfile(req.params.id, {
       avatar_url: avatarUrl,
     });
-
     return res.json({
       message: "Avatar uploaded successfully",
       avatar_url: avatarUrl,
