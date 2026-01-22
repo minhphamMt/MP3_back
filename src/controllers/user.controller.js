@@ -1,4 +1,5 @@
 import {
+  createUser,
   getAllUsers,
   getUserById,
   updateUserProfile,
@@ -22,6 +23,15 @@ export const listUsers = async (req, res, next) => {
   try {
     const users = await getAllUsers();
     return res.json(users);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const createUserByAdmin = async (req, res, next) => {
+  try {
+    const user = await createUser(req.body);
+    return res.status(201).json(user);
   } catch (error) {
     return next(error);
   }
@@ -132,10 +142,31 @@ export const uploadAvatar = async (req, res, next) => {
     next(err);
   }
 };
+export const uploadUserAvatarByAdmin = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
 
+    const avatarUrl = `/uploads/user/avatar/${req.file.filename}`;
+
+    const user = await updateUserProfile(req.params.id, {
+      avatar_url: avatarUrl,
+    });
+
+    return res.json({
+      message: "Avatar uploaded successfully",
+      avatar_url: avatarUrl,
+      user,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
 export default {
   getCurrentUser,
   listUsers,
+  createUserByAdmin,
   getUser,
   updateProfile,
   updateUser,
@@ -144,5 +175,6 @@ export default {
   toggleActive,
   getMyLikedSongs,
   getMyLikedAlbums,
-  uploadAvatar
+  uploadAvatar,
+  uploadUserAvatarByAdmin
 };

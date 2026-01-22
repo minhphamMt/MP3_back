@@ -26,6 +26,49 @@ export const getUserById = async (id) => {
   return sanitizeUser(rows[0]);
 };
 
+export const createUser = async ({
+  display_name,
+  name,
+  email,
+  password,
+  role = ROLES.USER,
+  is_active = 1,
+  avatar_url,
+}) => {
+  const displayName = display_name ?? name;
+
+  if (!displayName) {
+    throw createError(400, "display_name is required");
+  }
+  if (!email) {
+    throw createError(400, "email is required");
+  }
+  if (!password) {
+    throw createError(400, "password is required");
+  }
+
+  const allowedRoles = Object.values(ROLES);
+  if (role && !allowedRoles.includes(role)) {
+    throw createError(400, "Invalid role");
+  }
+
+  const [existing] = await db.query("SELECT id FROM users WHERE email = ?", [
+    email,
+  ]);
+  if (existing.length > 0) {
+    throw createError(409, "Email already registered");
+  }
+
+  const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+  const [result] = await db.query(
+    `INSERT INTO users (display_name, email, password_hash, role, is_active, avatar_url)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [displayName, email, hashedPassword, role, is_active ? 1 : 0, avatar_url || null]
+  );
+
+  return getUserById(result.insertId);
+};
+
 export const updateUserProfile = async (id, data) => {
   const displayNameUpdate = data.display_name ?? data.name;
   const normalizedData = { ...data };
@@ -175,6 +218,7 @@ export const setUserPassword = async (id, newPassword) => {
 export default {
   getAllUsers,
   getUserById,
+  createUser,
   updateUserProfile,
   deleteUser,
   changePassword,

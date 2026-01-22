@@ -5,8 +5,11 @@ import authMiddleware from "../middlewares/auth.middleware.js";
 import rbacMiddleware from "../middlewares/rbac.middleware.js";
 import ROLES from "../constants/roles.js";
 import { getMyLikedAlbums } from "../controllers/user.controller.js";
-import { uploadAvatar } from "../middlewares/upload.middleware.js";
-import { uploadAvatar as uploadAvatarController } from "../controllers/user.controller.js";
+import { uploadAdminUserAvatar, uploadAvatar } from "../middlewares/upload.middleware.js";
+import {
+  uploadAvatar as uploadAvatarController,
+  uploadUserAvatarByAdmin,
+} from "../controllers/user.controller.js";
 const router = Router();
 
 router.use(authMiddleware);
@@ -29,9 +32,16 @@ router.get(
 );
 // Admin routes
 router.get("/", rbacMiddleware(ROLES.ADMIN), userController.listUsers);
+router.post("/", rbacMiddleware(ROLES.ADMIN), userController.createUserByAdmin);
 router.get("/:id", rbacMiddleware(ROLES.ADMIN), userController.getUser);
 router.put("/:id", rbacMiddleware(ROLES.ADMIN), userController.updateUser);
 router.delete("/:id", rbacMiddleware(ROLES.ADMIN), userController.removeUser);
+router.post(
+  "/:id/avatar",
+  rbacMiddleware(ROLES.ADMIN),
+  uploadAdminUserAvatar,
+  uploadUserAvatarByAdmin
+);
 router.patch(
   "/:id/active",
   rbacMiddleware(ROLES.ADMIN),

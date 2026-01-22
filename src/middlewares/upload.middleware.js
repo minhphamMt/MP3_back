@@ -12,14 +12,15 @@ const songCoverDir = path.join(process.cwd(), "uploads/songs");
   fs.mkdirSync(dir, { recursive: true });
 });
 
-const createStorage = ({ destination, filenamePrefix }) =>
+const createStorage = ({ destination, filenamePrefix, resolveUserId }) =>
   multer.diskStorage({
     destination(req, file, cb) {
       cb(null, destination);
     },
     filename(req, file, cb) {
       const ext = path.extname(file.originalname);
-      const name = `${filenamePrefix}-${req.user.id}-${Date.now()}${ext}`;
+      const ownerId = resolveUserId ? resolveUserId(req) : req.user?.id;
+      const name = `${filenamePrefix}-${ownerId || "unknown"}-${Date.now()}${ext}`;
       cb(null, name);
     },
   });
@@ -42,6 +43,16 @@ export const uploadAvatar = multer({
   storage: createStorage({
     destination: userAvatarDir,
     filenamePrefix: "avatar",
+  }),
+  fileFilter: imageFileFilter,
+  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
+}).single("avatar");
+
+export const uploadAdminUserAvatar = multer({
+  storage: createStorage({
+    destination: userAvatarDir,
+    filenamePrefix: "avatar",
+    resolveUserId: (req) => req.params.id,
   }),
   fileFilter: imageFileFilter,
   limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
