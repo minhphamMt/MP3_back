@@ -1,6 +1,7 @@
 import {
   createSong,
-  deleteSong,
+  softDeleteSong,
+  restoreSong,
   getSongById,
   getSongStats,
   recordSongPlay,
@@ -16,7 +17,7 @@ import { getPaginationParams } from "../utils/pagination.js";
 import { errorResponse, successResponse } from "../utils/response.js";
 import ROLES from "../constants/roles.js";
 import SONG_STATUS from "../constants/song-status.js";
-import { getArtistByUserId } from "../services/artist.service.js";
+import { getArtistByUserId, getArtistByUserIdWithDeleted } from "../services/artist.service.js";
 import { getAlbumById } from "../services/album.service.js";
 
 const parseGenreQuery = (query) => query.genre || query.genres || [];
@@ -342,6 +343,7 @@ export const deleteSongHandler = async (req, res, next) => {
 
       const existingSong = await getSongById(req.params.id, {
         includeUnreleased: true,
+        includeDeleted: true,
       });
       if (!existingSong) {
         return errorResponse(res, "Song not found", 404);
@@ -351,12 +353,40 @@ export const deleteSongHandler = async (req, res, next) => {
       }
     }
 
-    await deleteSong(req.params.id);
+    await softDeleteSong(req.params.id, {
+      deletedBy: req.user?.id,
+      deletedByRole: req.user?.role,
+    });
     return successResponse(res, { message: "Song deleted" });
   } catch (error) {
     return next(error);
   }
 };
+
+export const restoreSongHandler = async (req, res, next) => {
+  try {
+    let artistId = null;
+
+    if (req.user?.role === ROLES.ARTIST) {
+      const artist = await getArtistByUserIdWithDeleted(req.user.id);
+      if (!artist) {
+        return errorResponse(res, "Artist profile not found", 403);
+      }
+      artistId = artist.id;
+    }
+
+    const song = await restoreSong(req.params.id, {
+      requesterRole: req.user?.role,
+      requesterId: req.user?.id,
+      artistId,
+    });
+
+    return successResponse(res, song);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 export const getSongsByArtist = async (req, res, next) => {
   try {
     const { artistId, artist_id: artist_id_param } = req.query;
@@ -412,6 +442,7 @@ export default {
   updateSongHandler,
   uploadSongAudio,
   uploadSongCover,
+  restoreSongHandler,
   deleteSongHandler,
   getSongsByArtist,
   getLikedSongss

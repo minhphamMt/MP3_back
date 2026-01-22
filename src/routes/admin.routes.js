@@ -14,6 +14,7 @@ router.get("/genres", adminController.listGenresRequest);
 router.post("/genres", adminController.createGenreRequest);
 router.put("/genres/:id", adminController.updateGenreRequest);
 router.delete("/genres/:id", adminController.deleteGenreRequest);
+router.patch("/genres/:id/restore", adminController.restoreGenreRequest);
 router.patch("/songs/:id/review", adminController.reviewSongRequest);
 router.patch("/songs/:id/approve", adminController.approveSongRequest);
 router.patch("/songs/:id/block", adminController.blockSongRequest);

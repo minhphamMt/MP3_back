@@ -20,6 +20,7 @@ export const likeAlbum = async (userId, albumId) => {
     SELECT id
     FROM albums
     WHERE id = ?
+      AND is_deleted = 0
       AND release_date IS NOT NULL
       AND release_date <= NOW()
     `,
@@ -81,6 +82,7 @@ export const getLikedAlbums = async (userId) => {
     JOIN albums al ON al.id = alikes.album_id
     LEFT JOIN artists ar ON ar.id = al.artist_id
     WHERE alikes.user_id = ?
+    AND al.is_deleted = 0
     AND al.release_date IS NOT NULL
     AND al.release_date <= NOW()
     ORDER BY alikes.liked_at DESC

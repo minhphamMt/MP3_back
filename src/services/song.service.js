@@ -1,4 +1,5 @@
 import db from "../config/db.js";
+import ROLES from "../constants/roles.js";
 import SONG_STATUS from "../constants/song-status.js";
 import { recordListeningHistory } from "./history.service.js";
 
@@ -93,7 +94,7 @@ const getSongLikesCount = async (songId) => {
 
 const getSongPlayCount = async (songId) => {
   const [rows] = await db.query(
-    "SELECT play_count FROM songs WHERE id = ? LIMIT 1",
+   "SELECT play_count FROM songs WHERE id = ? AND is_deleted = 0 LIMIT 1",
     [songId]
   );
   if (!rows[0]) {
@@ -111,7 +112,10 @@ const getSongEngagement = async (songId) => {
 };
 
 export const updateSongMedia = async (songId, { audioPath, coverUrl }) => {
-  const [songs] = await db.query("SELECT id FROM songs WHERE id = ?", [songId]);
+  const [songs] = await db.query(
+    "SELECT id FROM songs WHERE id = ? AND is_deleted = 0",
+    [songId]
+  );
   if (!songs[0]) {
     throw createError(404, "Song not found");
   }
@@ -152,7 +156,10 @@ export const reviewSong = async (
     throw createError(400, "reject_reason is required for rejected status");
   }
 
-  const [songs] = await db.query("SELECT id FROM songs WHERE id = ?", [songId]);
+  const [songs] = await db.query(
+    "SELECT id FROM songs WHERE id = ? AND is_deleted = 0",
+    [songId]
+  );
   if (!songs[0]) {
     throw createError(404, "Song not found");
   }
@@ -185,7 +192,7 @@ await db.query(
   return getSongById(songId);
 };
 export const listSongs = async ({
-page,
+  page,
   limit,
   offset,
   genres = [],
@@ -193,9 +200,10 @@ page,
   artistId,
   albumId,
   includeUnreleased = false,
+  includeDeleted = false,
   keyword,
 }) => {
-const filters = ["1=1"];
+  const filters = ["1=1"];
   const params = [];
 
   if (keyword) {
@@ -204,6 +212,10 @@ const filters = ["1=1"];
       "(s.title LIKE ? OR ar.name LIKE ? OR al.title LIKE ?)"
     );
     params.push(normalizedKeyword, normalizedKeyword, normalizedKeyword);
+  }
+
+  if (!includeDeleted) {
+    filters.push("s.is_deleted = 0");
   }
 
   if (!includeUnreleased) {
@@ -276,10 +288,14 @@ const filters = ["1=1"];
 
 export const getSongById = async (
   id,
-  { includeUnreleased = false } = {}
+  { includeUnreleased = false, includeDeleted = false } = {}
 ) => {
   const filters = ["s.id = ?"];
   const params = [id];
+
+  if (!includeDeleted) {
+    filters.push("s.is_deleted = 0");
+  }
 
   // 🔐 USER → chỉ thấy approved
   if (!includeUnreleased) {
@@ -329,6 +345,7 @@ export const likeSong = async (songId, userId) => {
     SELECT id
     FROM songs
     WHERE id = ?
+      AND is_deleted = 0
       AND status = 'approved'
       AND release_date IS NOT NULL
       AND release_date <= NOW()
@@ -352,7 +369,10 @@ export const likeSong = async (songId, userId) => {
 };
 
 export const unlikeSong = async (songId, userId) => {
-  const [songs] = await db.query("SELECT id FROM songs WHERE id = ?", [songId]);
+  const [songs] = await db.query(
+    "SELECT id FROM songs WHERE id = ? AND is_deleted = 0",
+    [songId]
+  );
   if (!songs[0]) {
     throw createError(404, "Song not found");
   }
@@ -399,6 +419,7 @@ export const recordSongPlay = async (songId, userId, duration = null) => {
     SELECT s.id
     FROM songs s
     WHERE s.id = ?
+      AND s.is_deleted = 0
       AND s.status = 'approved'
       AND s.release_date IS NOT NULL
       AND s.release_date <= NOW()
@@ -569,7 +590,10 @@ export const updateSong = async (
     zing_song_id,
   }
 ) => {
-  const [existing] = await db.query("SELECT * FROM songs WHERE id = ?", [id]);
+  const [existing] = await db.query(
+    "SELECT * FROM songs WHERE id = ? AND is_deleted = 0",
+    [id]
+  );
   if (!existing[0]) {
     throw createError(404, "Song not found");
   }
@@ -622,6 +646,77 @@ export const deleteSong = async (id) => {
     throw createError(404, "Song not found");
   }
 };
+export const softDeleteSong = async (id, { deletedBy, deletedByRole }) => {
+  const [rows] = await db.query(
+    "SELECT id, is_deleted FROM songs WHERE id = ?",
+    [id]
+  );
+  if (!rows[0]) {
+    throw createError(404, "Song not found");
+  }
+  if (rows[0].is_deleted) {
+    throw createError(409, "Song already deleted");
+  }
+
+  await db.query(
+    `
+    UPDATE songs
+    SET is_deleted = 1,
+        deleted_by = ?,
+        deleted_by_role = ?,
+        deleted_at = NOW()
+    WHERE id = ?
+    `,
+    [deletedBy || null, deletedByRole || null, id]
+  );
+};
+
+export const restoreSong = async (
+  id,
+  { requesterRole, requesterId, artistId }
+) => {
+  const [rows] = await db.query(
+    `
+    SELECT id, artist_id, is_deleted, deleted_by, deleted_by_role
+    FROM songs
+    WHERE id = ?
+    `,
+    [id]
+  );
+  const song = rows[0];
+  if (!song) {
+    throw createError(404, "Song not found");
+  }
+  if (!song.is_deleted) {
+    throw createError(400, "Song is not deleted");
+  }
+
+  if (requesterRole === ROLES.ARTIST) {
+    if (!artistId || song.artist_id !== artistId) {
+      throw createError(403, "Forbidden");
+    }
+    if (
+      song.deleted_by_role !== ROLES.ARTIST ||
+      song.deleted_by !== requesterId
+    ) {
+      throw createError(403, "Song cannot be restored");
+    }
+  }
+
+  await db.query(
+    `
+    UPDATE songs
+    SET is_deleted = 0,
+        deleted_by = NULL,
+        deleted_by_role = NULL,
+        deleted_at = NULL
+    WHERE id = ?
+    `,
+    [id]
+  );
+
+  return getSongById(id, { includeUnreleased: true, includeDeleted: true });
+};
 export const listSongsByArtist = async (
   artistId,
   { includeUnreleased = false } = {}
@@ -662,6 +757,7 @@ export const listSongsByArtist = async (
     FROM songs s
     LEFT JOIN albums al ON s.album_id = al.id
     WHERE s.artist_id = ?
+    AND s.is_deleted = 0
       AND ${includeUnreleased ? "1=1" : "s.status = 'approved'"}
       AND ${includeUnreleased ? "1=1" : "s.audio_path IS NOT NULL"}
       ${
@@ -687,6 +783,7 @@ export const getLikedSongsByUser = async (userId) => {
     FROM song_likes ls
     JOIN songs s ON s.id = ls.song_id
     WHERE ls.user_id = ?
+    AND s.is_deleted = 0
   `,
     [userId]
   );
@@ -713,6 +810,7 @@ export const getLikedSongs= async (userId) => {
     LEFT JOIN artists ar ON ar.id = s.artist_id
     LEFT JOIN albums al ON al.id = s.album_id
     WHERE sl.user_id = ?
+    AND s.is_deleted = 0
     AND s.status = 'approved'
       AND s.release_date IS NOT NULL
       AND s.release_date <= NOW()
@@ -748,6 +846,8 @@ export default {
   createSong,
   updateSong,
   deleteSong,
+  softDeleteSong,
+  restoreSong,
   listSongsByArtist,
   getLikedSongsByUser,
   getLikedSongs

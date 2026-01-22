@@ -1,6 +1,7 @@
 import {
   createAlbum,
-  deleteAlbum,
+  softDeleteAlbum,
+  restoreAlbum,
   getAlbumById,
   listAlbums,
   updateAlbum,
@@ -13,7 +14,7 @@ import {
   unlikeAlbum,
 } from "../services/album-like.service.js";
 import ROLES from "../constants/roles.js";
-import { getArtistByUserId } from "../services/artist.service.js";
+import { getArtistByUserId, getArtistByUserIdWithDeleted } from "../services/artist.service.js";
 const parseGenreQuery = (query) => query.genre || query.genres || [];
 const resolveIncludeUnreleased = async ({ user }, { artistId, albumId } = {}) => {
   if (!user) return false;
@@ -178,6 +179,7 @@ export const deleteAlbumHandler = async (req, res, next) => {
       const existingAlbum = await getAlbumById(req.params.id, {
         includeSongs: false,
         includeUnreleased: true,
+        includeDeleted: true,
       });
       if (!existingAlbum) {
         return errorResponse(res, "Album not found", 404);
@@ -186,8 +188,35 @@ export const deleteAlbumHandler = async (req, res, next) => {
         return errorResponse(res, "Forbidden", 403);
       }
     }
-    await deleteAlbum(req.params.id);
+    await softDeleteAlbum(req.params.id, {
+      deletedBy: req.user?.id,
+      deletedByRole: req.user?.role,
+    });
     return successResponse(res, { message: "Album deleted" });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const restoreAlbumHandler = async (req, res, next) => {
+  try {
+    let artistId = null;
+
+    if (req.user?.role === ROLES.ARTIST) {
+      const artist = await getArtistByUserIdWithDeleted(req.user.id);
+      if (!artist) {
+        return errorResponse(res, "Artist profile not found", 403);
+      }
+      artistId = artist.id;
+    }
+
+    const album = await restoreAlbum(req.params.id, {
+      requesterRole: req.user?.role,
+      requesterId: req.user?.id,
+      artistId,
+    });
+
+    return successResponse(res, album);
   } catch (error) {
     return next(error);
   }
@@ -255,6 +284,7 @@ export default {
   createAlbumHandler,
   updateAlbumHandler,
   deleteAlbumHandler,
+  restoreAlbumHandler,
   likeAlbumHandler,
   unlikeAlbumHandler,
   uploadAlbumCoverHandler

@@ -104,6 +104,7 @@ export const getPlaylistById = async (id) => {
     JOIN songs s ON s.id = ps.song_id
     LEFT JOIN albums al ON al.id = s.album_id
     WHERE ps.playlist_id = ?
+    AND s.is_deleted = 0
       AND s.status = 'approved'
       AND s.release_date IS NOT NULL
       AND s.release_date <= NOW()
@@ -188,9 +189,10 @@ export const addSongToPlaylist = async (
 ) => {
   await ensurePlaylistOwner(playlistId, userId);
 
-  const [songRows] = await db.query("SELECT id FROM songs WHERE id = ?", [
-    songId,
-  ]);
+  const [songRows] = await db.query(
+    "SELECT id FROM songs WHERE id = ? AND is_deleted = 0",
+    [songId]
+  );
   if (!songRows[0]) {
     throw createError(404, "Song not found");
   }

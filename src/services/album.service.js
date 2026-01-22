@@ -1,4 +1,5 @@
 import db from "../config/db.js";
+import ROLES from "../constants/roles.js";
 import { buildPaginationMeta } from "../utils/pagination.js";
 
 const createError = (status, message) => {
@@ -22,15 +23,16 @@ const parseGenreString = (genreString) =>
   genreString ? genreString.split(",").filter(Boolean) : [];
 
 export const listAlbums = async ({
-page,
-limit,
-offset,
-status,
-artistId,
-genres,
-sort = "release_date",
-order = "desc",
-includeUnreleased = false, // ADMIN / ARTIST
+  page,
+  limit,
+  offset,
+  status,
+  artistId,
+  genres,
+  sort = "release_date",
+  order = "desc",
+  includeUnreleased = false,
+  includeDeleted = false,
 }) => {
 const allowedSort = {
 release_date: "a.release_date",
@@ -46,6 +48,9 @@ const sortOrder = order.toUpperCase() === "ASC" ? "ASC" : "DESC";
 let where = "WHERE 1=1";
 const params = [];
 
+if (!includeDeleted) {
+  where += " AND a.is_deleted = 0";
+}
 
 if (!includeUnreleased) {
 where += " AND a.release_date IS NOT NULL AND a.release_date <= NOW()";
@@ -95,7 +100,7 @@ meta: { page, limit },
 
 export const getAlbumById = async (
 id,
-{ status, genres = [], includeSongs = true, includeUnreleased = false } = {}
+{ status, genres = [], includeSongs = true, includeUnreleased = false, includeDeleted = false } = {}
 ) => {
 const [albumRows] = await db.query(
 `
@@ -103,6 +108,7 @@ SELECT al.*, ar.name AS artist_name
 FROM albums al
 LEFT JOIN artists ar ON ar.id = al.artist_id
 WHERE al.id = ?
+${includeDeleted ? "" : "AND al.is_deleted = 0"}
 ${includeUnreleased ? "" : "AND al.release_date IS NOT NULL AND al.release_date <= NOW()"}
 LIMIT 1;
 `,
@@ -120,6 +126,7 @@ let songs = [];
 if (includeSongs) {
 const songFilters = [
   "s.album_id = ?",
+  "s.is_deleted = 0",
   includeUnreleased ? "1=1" : "s.status = 'approved'",
   includeUnreleased ? "1=1" : "s.release_date IS NOT NULL",
   includeUnreleased ? "1=1" : "s.release_date <= NOW()",
@@ -154,9 +161,10 @@ songs,
 };
 
 export const updateAlbumCover = async (albumId, coverUrl) => {
-  const [albums] = await db.query("SELECT id FROM albums WHERE id = ?", [
-    albumId,
-  ]);
+  const [albums] = await db.query(
+    "SELECT id FROM albums WHERE id = ? AND is_deleted = 0",
+    [albumId]
+  );
 
   if (!albums[0]) {
     throw createError(404, "Album not found");
@@ -206,7 +214,7 @@ export const updateAlbum = async (
   { title, release_date }
 ) => {
   const [existing] = await db.query(
-    "SELECT * FROM albums WHERE id = ?",
+    "SELECT * FROM albums WHERE id = ? AND is_deleted = 0",
     [id]
   );
 
@@ -250,6 +258,78 @@ export const deleteAlbum = async (id) => {
   }
 };
 
+export const softDeleteAlbum = async (id, { deletedBy, deletedByRole }) => {
+  const [rows] = await db.query(
+    "SELECT id, is_deleted FROM albums WHERE id = ?",
+    [id]
+  );
+  if (!rows[0]) {
+    throw createError(404, "Album not found");
+  }
+  if (rows[0].is_deleted) {
+    throw createError(409, "Album already deleted");
+  }
+
+  await db.query(
+    `
+    UPDATE albums
+    SET is_deleted = 1,
+        deleted_by = ?,
+        deleted_by_role = ?,
+        deleted_at = NOW()
+    WHERE id = ?
+    `,
+    [deletedBy || null, deletedByRole || null, id]
+  );
+};
+
+export const restoreAlbum = async (
+  id,
+  { requesterRole, requesterId, artistId }
+) => {
+  const [rows] = await db.query(
+    `
+    SELECT id, artist_id, is_deleted, deleted_by, deleted_by_role
+    FROM albums
+    WHERE id = ?
+    `,
+    [id]
+  );
+  const album = rows[0];
+  if (!album) {
+    throw createError(404, "Album not found");
+  }
+  if (!album.is_deleted) {
+    throw createError(400, "Album is not deleted");
+  }
+
+  if (requesterRole === ROLES.ARTIST) {
+    if (!artistId || album.artist_id !== artistId) {
+      throw createError(403, "Forbidden");
+    }
+    if (
+      album.deleted_by_role !== ROLES.ARTIST ||
+      album.deleted_by !== requesterId
+    ) {
+      throw createError(403, "Album cannot be restored");
+    }
+  }
+
+  await db.query(
+    `
+    UPDATE albums
+    SET is_deleted = 0,
+        deleted_by = NULL,
+        deleted_by_role = NULL,
+        deleted_at = NULL
+    WHERE id = ?
+    `,
+    [id]
+  );
+
+  return getAlbumById(id, { includeSongs: true, includeUnreleased: true, includeDeleted: true });
+};
+
 export default {
   listAlbums,
   getAlbumById,
@@ -257,4 +337,6 @@ export default {
   createAlbum,
   updateAlbum,
   deleteAlbum,
+  softDeleteAlbum,
+  restoreAlbum,
 };

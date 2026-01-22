@@ -53,5 +53,11 @@ router.delete(
   rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
   artistController.deleteArtistHandler
 );
+router.patch(
+  "/:id/restore",
+  authMiddleware,
+  rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
+  artistController.restoreArtistHandler
+);
 
 export default router;

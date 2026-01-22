@@ -83,6 +83,10 @@ const getListeningHistoryWithMetadata = async (
     LEFT JOIN song_genres sg ON sg.song_id = s.id
     LEFT JOIN genres g ON g.id = sg.genre_id
     WHERE lh.user_id = ?
+    AND s.is_deleted = 0
+      AND s.status = 'approved'
+      AND s.release_date IS NOT NULL
+      AND s.release_date <= NOW()
     GROUP BY lh.song_id, s.artist_id
     ORDER BY play_count DESC
     LIMIT ?;
@@ -168,6 +172,10 @@ const querySongsByPreference = async (artists, genres, excludeIds, limit) => {
     LEFT JOIN song_genres sg ON sg.song_id = s.id
     LEFT JOIN genres g ON g.id = sg.genre_id
     WHERE ${filters.join(" AND ")}
+    AND s.is_deleted = 0
+      AND s.status = 'approved'
+      AND s.release_date IS NOT NULL
+      AND s.release_date <= NOW()
     GROUP BY s.id
     ORDER BY s.play_count DESC
     LIMIT ?;
@@ -197,7 +205,11 @@ const getPopularSongs = async (limit, excludeIds = []) => {
     `
     SELECT s.id
     FROM songs s
-    ${whereClause}
+    ${whereClause ? `${whereClause} AND` : "WHERE"}
+      s.is_deleted = 0
+      AND s.status = 'approved'
+      AND s.release_date IS NOT NULL
+      AND s.release_date <= NOW()
     ORDER BY s.play_count DESC
     LIMIT ?;
   `,

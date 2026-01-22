@@ -17,17 +17,16 @@ export const getSystemOverview = async () => {
     approvedSongs,
     rejectedSongs,
   ] = await Promise.all([
-    getCount("SELECT COUNT(*) AS count FROM users"),
-    getCount("SELECT COUNT(*) AS count FROM artists"),
-    getCount("SELECT COUNT(*) AS count FROM songs"),
-    getCount("SELECT COUNT(*) AS count FROM albums"),
-    getCount("SELECT COUNT(*) AS count FROM songs WHERE status = ?", [
+    getCount("SELECT COUNT(*) AS count FROM artists WHERE is_deleted = 0"),
+    getCount("SELECT COUNT(*) AS count FROM songs WHERE is_deleted = 0"),
+    getCount("SELECT COUNT(*) AS count FROM albums WHERE is_deleted = 0"),
+    getCount("SELECT COUNT(*) AS count FROM songs WHERE is_deleted = 0 AND status = ?", [
       SONG_STATUS.PENDING,
     ]),
-    getCount("SELECT COUNT(*) AS count FROM songs WHERE status = ?", [
+    getCount("SELECT COUNT(*) AS count FROM songs WHERE is_deleted = 0 AND status = ?", [
       SONG_STATUS.APPROVED,
     ]),
-    getCount("SELECT COUNT(*) AS count FROM songs WHERE status = ?", [
+    getCount("SELECT COUNT(*) AS count FROM songs WHERE is_deleted = 0 AND status = ?", [
       SONG_STATUS.REJECTED,
     ]),
   ]);

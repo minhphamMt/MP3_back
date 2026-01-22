@@ -52,6 +52,7 @@ const searchSongs = async (keyword, { limit, offset, userId }) => {
       ) AS score
     FROM songs s
     WHERE s.status = 'approved'
+    AND s.is_deleted = 0
     AND s.release_date IS NOT NULL
       AND s.release_date <= NOW()
       AND s.title LIKE ?
@@ -83,6 +84,7 @@ const searchSongsAdmin = async (keyword, { limit, offset }) => {
       ) AS score
     FROM songs s
     WHERE s.title LIKE ?
+    AND s.is_deleted = 0
     ORDER BY score DESC
     LIMIT ? OFFSET ?
     `,
@@ -101,6 +103,7 @@ const searchArtists = async (keyword, { limit, offset }) => {
       (a.follow_count * 0.01) AS score
     FROM artists a
     WHERE a.name LIKE ?
+    AND a.is_deleted = 0
     ORDER BY score DESC
     LIMIT ? OFFSET ?
     `,
@@ -159,6 +162,7 @@ const searchAlbums = async (keyword, { limit, offset }) => {
       (al.title LIKE ?) * 3 AS score
     FROM albums al
     WHERE al.title LIKE ?
+    AND al.is_deleted = 0
     AND al.release_date IS NOT NULL
     AND al.release_date <= NOW()
     ORDER BY score DESC

@@ -1,8 +1,10 @@
 import {
   createArtist,
-  deleteArtist,
+  softDeleteArtist,
+  restoreArtist,
   getArtistById,
   getArtistByUserId,
+  getArtistByUserIdWithDeleted,
   listArtists,
   updateArtist,
   listArtistCollections,
@@ -147,12 +149,36 @@ export const deleteArtistHandler = async (req, res, next) => {
       }
     }
 
-    await deleteArtist(req.params.id);
+    await softDeleteArtist(req.params.id, {
+      deletedBy: req.user?.id,
+      deletedByRole: req.user?.role,
+    });
     return successResponse(res, { message: "Artist deleted" });
   } catch (error) {
     return next(error);
   }
 };
+
+export const restoreArtistHandler = async (req, res, next) => {
+  try {
+    if (req.user?.role === ROLES.ARTIST) {
+      const artistProfile = await getArtistByUserIdWithDeleted(req.user.id);
+      if (!artistProfile || Number(req.params.id) !== artistProfile.id) {
+        return errorResponse(res, "Forbidden", 403);
+      }
+    }
+
+    const artist = await restoreArtist(req.params.id, {
+      requesterRole: req.user?.role,
+      requesterId: req.user?.id,
+    });
+
+    return successResponse(res, artist);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 export const getArtistCollections = async (req, res, next) => {
   try {
     const limit = Number(req.query.limit) || 8;
@@ -196,6 +222,7 @@ export default {
   getMyArtistProfile,
   createArtistHandler,
   updateArtistHandler,
+  restoreArtistHandler,
   deleteArtistHandler,
   getArtistCollections,
   uploadArtistAvatar,

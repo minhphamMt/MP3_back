@@ -1,4 +1,5 @@
 import db from "../config/db.js";
+import ROLES from "../constants/roles.js";
 import { buildPaginationMeta } from "../utils/pagination.js";
 import { generateZingId } from "../utils/zing-id.js";
 
@@ -40,10 +41,15 @@ export const listArtists = async ({
   offset,
   genres = [],
   status,
+  includeDeleted = false,
 }) => {
   const normalizedGenres = normalizeGenres(genres);
   const filters = [];
   const params = [];
+
+  if (!includeDeleted) {
+    filters.push("ar.is_deleted = 0");
+  }
 
   if (status || normalizedGenres.length > 0) {
     const songFilters = ["s.artist_id = ar.id"];
@@ -123,11 +129,11 @@ export const listArtists = async ({
 
 export const getArtistById = async (
   id,
-  { status, genres = [], includeUnreleased = false } = {}
+  { status, genres = [], includeUnreleased = false, includeDeleted = false } = {}
 ) => {
   const [artistRows] = await db.query(
     `
-    SELECT * FROM artists WHERE id = ? LIMIT 1;
+    SELECT * FROM artists WHERE id = ? ${includeDeleted ? "" : "AND is_deleted = 0"} LIMIT 1;
   `,
     [id]
   );
@@ -154,6 +160,7 @@ export const getArtistById = async (
       }) AS song_count
     FROM albums al
     WHERE al.artist_id = ?
+    ${includeDeleted ? "" : "AND al.is_deleted = 0"}
     ${
         includeUnreleased
           ? ""
@@ -166,6 +173,10 @@ export const getArtistById = async (
 
   const songFilters = ["s.artist_id = ?"];
   const songParams = [id];
+
+  if (!includeDeleted) {
+    songFilters.push("s.is_deleted = 0");
+  }
 
   if (status) {
     songFilters.push("s.status = ?");
@@ -231,6 +242,17 @@ export const getArtistById = async (
   };
 };
 export const getArtistByUserId = async (userId) => {
+  if (!userId) return null;
+  const [rows] = await db.query(
+    `
+    SELECT * FROM artists WHERE user_id = ? AND is_deleted = 0 LIMIT 1;
+  `,
+    [userId]
+  );
+
+  return rows[0] || null;
+};
+export const getArtistByUserIdWithDeleted = async (userId) => {
   if (!userId) return null;
   const [rows] = await db.query(
     `
@@ -325,7 +347,10 @@ export const updateArtist = async (
     zing_artist_id,
   }
 ) => {
-  const [existing] = await db.query("SELECT * FROM artists WHERE id = ?", [id]);
+  const [existing] = await db.query(
+    "SELECT * FROM artists WHERE id = ? AND is_deleted = 0",
+    [id]
+  );
   if (!existing[0]) {
     throw createError(404, "Artist not found");
   }
@@ -372,6 +397,77 @@ export const deleteArtist = async (id) => {
     throw createError(404, "Artist not found");
   }
 };
+export const softDeleteArtist = async (id, { deletedBy, deletedByRole }) => {
+  const [rows] = await db.query(
+    "SELECT id, is_deleted FROM artists WHERE id = ?",
+    [id]
+  );
+  if (!rows[0]) {
+    throw createError(404, "Artist not found");
+  }
+  if (rows[0].is_deleted) {
+    throw createError(409, "Artist already deleted");
+  }
+
+  await db.query(
+    `
+    UPDATE artists
+    SET is_deleted = 1,
+        deleted_by = ?,
+        deleted_by_role = ?,
+        deleted_at = NOW()
+    WHERE id = ?
+    `,
+    [deletedBy || null, deletedByRole || null, id]
+  );
+};
+
+export const restoreArtist = async (
+  id,
+  { requesterRole, requesterId }
+) => {
+  const [rows] = await db.query(
+    `
+    SELECT id, user_id, is_deleted, deleted_by, deleted_by_role
+    FROM artists
+    WHERE id = ?
+    `,
+    [id]
+  );
+  const artist = rows[0];
+  if (!artist) {
+    throw createError(404, "Artist not found");
+  }
+  if (!artist.is_deleted) {
+    throw createError(400, "Artist is not deleted");
+  }
+
+  if (requesterRole === ROLES.ARTIST) {
+    if (artist.user_id !== requesterId) {
+      throw createError(403, "Forbidden");
+    }
+    if (
+      artist.deleted_by_role !== ROLES.ARTIST ||
+      artist.deleted_by !== requesterId
+    ) {
+      throw createError(403, "Artist cannot be restored");
+    }
+  }
+
+  await db.query(
+    `
+    UPDATE artists
+    SET is_deleted = 0,
+        deleted_by = NULL,
+        deleted_by_role = NULL,
+        deleted_at = NULL
+    WHERE id = ?
+    `,
+    [id]
+  );
+
+  return getArtistById(id, { includeUnreleased: true, includeDeleted: true });
+};
 export const listArtistCollections = async (limit = 8) => {
   const [rows] = await db.query(
     `
@@ -383,6 +479,8 @@ export const listArtistCollections = async (limit = 8) => {
     FROM artists a
     JOIN songs s ON s.artist_id = a.id
     WHERE s.status = 'approved'
+    AND s.is_deleted = 0
+    AND a.is_deleted = 0
     GROUP BY a.id
     ORDER BY song_count DESC
     LIMIT ?
@@ -397,8 +495,11 @@ export default {
   listArtists,
   getArtistById,
   getArtistByUserId,
+  getArtistByUserIdWithDeleted,
   createArtist,
   updateArtist,
   deleteArtist,
+  softDeleteArtist,
+  restoreArtist,
   listArtistCollections,
 };

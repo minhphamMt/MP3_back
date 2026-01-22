@@ -16,7 +16,7 @@ export const followArtist = async (userId, artistId) => {
 
   // check artist exists
   const [artists] = await db.query(
-    "SELECT id FROM artists WHERE id = ?",
+    "SELECT id FROM artists WHERE id = ? AND is_deleted = 0",
     [artistId]
   );
   if (!artists[0]) {
@@ -105,8 +105,9 @@ export const getFollowedArtists = async (userId) => {
     LEFT JOIN songs s 
       ON s.artist_id = a.id
       AND s.status = 'approved'   -- nếu bạn có status
-
+      AND s.is_deleted = 0
     WHERE af.user_id = ?
+    AND a.is_deleted = 0
     GROUP BY
       a.id,
       af.followed_at

@@ -43,8 +43,10 @@ export const getUserListeningHistory = async (
   const [countRows] = await db.query(
     `
     SELECT COUNT(*) AS total
-    FROM listening_history
-    WHERE user_id = ?
+    FROM listening_history lh
+    JOIN songs s ON s.id = lh.song_id
+    WHERE lh.user_id = ?
+    AND s.is_deleted = 0
     `,
     [userId]
   );
@@ -85,6 +87,9 @@ export const getUserListeningHistory = async (
     LEFT JOIN song_genres sg ON sg.song_id = s.id
     LEFT JOIN genres g ON g.id = sg.genre_id
     WHERE lh.user_id = ?
+    AND s.is_deleted = 0
+      AND (ar.id IS NULL OR ar.is_deleted = 0)
+      AND (al.id IS NULL OR al.is_deleted = 0)
     GROUP BY lh.id
     ORDER BY lh.listened_at DESC
     LIMIT ? OFFSET ?

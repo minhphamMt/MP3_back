@@ -164,6 +164,8 @@ export const getTopSongsAnalytics = async ({
     JOIN songs s ON s.id = lh.song_id
     LEFT JOIN artists ar ON ar.id = s.artist_id
     WHERE ${EVENT_TIME_FIELD} BETWEEN ? AND ?
+    AND s.is_deleted = 0
+    AND (ar.id IS NULL OR ar.is_deleted = 0)
     GROUP BY lh.song_id
     ORDER BY total_plays DESC
     LIMIT ?;
@@ -188,8 +190,10 @@ export const getTopSongsAnalytics = async ({
       COUNT(*) AS plays,
       COALESCE(SUM(lh.duration), 0) AS duration
     FROM listening_history lh
+    JOIN songs s ON s.id = lh.song_id
     WHERE ${EVENT_TIME_FIELD} BETWEEN ? AND ?
       AND lh.song_id IN (${placeholders})
+      AND s.is_deleted = 0
     GROUP BY lh.song_id, period_start
     ORDER BY period_start ASC;
   `,
@@ -249,6 +253,8 @@ export const getTopArtistsAnalytics = async ({
     JOIN artists ar ON ar.id = s.artist_id
     WHERE ${EVENT_TIME_FIELD} BETWEEN ? AND ?
       AND s.artist_id IS NOT NULL
+      AND s.is_deleted = 0
+      AND ar.is_deleted = 0
     GROUP BY s.artist_id
     ORDER BY total_plays DESC
     LIMIT ?;
@@ -276,6 +282,7 @@ export const getTopArtistsAnalytics = async ({
     JOIN songs s ON s.id = lh.song_id
     WHERE ${EVENT_TIME_FIELD} BETWEEN ? AND ?
       AND s.artist_id IN (${placeholders})
+      AND s.is_deleted = 0
     GROUP BY s.artist_id, period_start
     ORDER BY period_start ASC;
   `,
@@ -325,9 +332,12 @@ export const getTopGenresAnalytics = async ({
       COUNT(*) AS total_plays,
       COALESCE(SUM(lh.duration), 0) AS total_duration
     FROM listening_history lh
+    JOIN songs s ON s.id = lh.song_id
     JOIN song_genres sg ON sg.song_id = lh.song_id
     JOIN genres g ON g.id = sg.genre_id
     WHERE ${EVENT_TIME_FIELD} BETWEEN ? AND ?
+    AND s.is_deleted = 0
+    AND g.is_deleted = 0
     GROUP BY g.id
     ORDER BY total_plays DESC
     LIMIT ?;
@@ -352,10 +362,13 @@ export const getTopGenresAnalytics = async ({
        COUNT(*) AS plays,
       COALESCE(SUM(lh.duration), 0) AS duration
     FROM listening_history lh
+    JOIN songs s ON s.id = lh.song_id
     JOIN song_genres sg ON sg.song_id = lh.song_id
     JOIN genres g ON g.id = sg.genre_id
     WHERE ${EVENT_TIME_FIELD} BETWEEN ? AND ?
       AND g.id IN (${placeholders})
+      AND s.is_deleted = 0
+      AND g.is_deleted = 0
     GROUP BY g.id, period_start
     ORDER BY period_start ASC;
   `,

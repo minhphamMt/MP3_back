@@ -11,7 +11,8 @@ import { successResponse } from "../utils/response.js";
 import SONG_STATUS from "../constants/song-status.js";
 import {
   createGenre,
-  deleteGenre,
+  softDeleteGenre,
+  restoreGenre,
   listGenres,
   updateGenre,
 } from "../services/genre.service.js";
@@ -230,8 +231,22 @@ export const updateGenreRequest = async (req, res, next) => {
 
 export const deleteGenreRequest = async (req, res, next) => {
   try {
-    await deleteGenre(req.params.id);
+    await softDeleteGenre(req.params.id, {
+      deletedBy: req.user?.id,
+      deletedByRole: req.user?.role,
+    });
     return successResponse(res, { message: "Genre deleted" });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const restoreGenreRequest = async (req, res, next) => {
+  try {
+    const genre = await restoreGenre(req.params.id, {
+      requesterRole: req.user?.role,
+    });
+    return successResponse(res, genre);
   } catch (error) {
     return next(error);
   }
@@ -332,6 +347,7 @@ export default {
   createGenreRequest,
   updateGenreRequest,
   deleteGenreRequest,
+  restoreGenreRequest,
   searchAdmin,
   getReportOverview,
   listSongsRequest,

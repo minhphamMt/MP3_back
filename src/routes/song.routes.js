@@ -51,6 +51,12 @@ router.delete(
   rbacMiddleware(ROLES.ADMIN  , ROLES.ARTIST),
   songController.deleteSongHandler
 );
+router.patch(
+  "/:id/restore",
+  authMiddleware,
+  rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
+  songController.restoreSongHandler
+);
 router.post("/:id/like", authMiddleware, songController.likeSongHandler);
 router.delete("/:id/like", authMiddleware, songController.unlikeSongHandler);
 router.post("/:id/play", authMiddleware, songController.recordPlay);

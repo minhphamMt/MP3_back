@@ -16,6 +16,8 @@ export const getZingChart = async () => {
     FROM songs s
     LEFT JOIN artists ar ON ar.id = s.artist_id
     WHERE s.status = 'approved'
+    AND s.is_deleted = 0
+    AND (ar.id IS NULL OR ar.is_deleted = 0)
     AND s.release_date IS NOT NULL
     AND s.release_date <= NOW()
     ORDER BY s.play_count DESC
@@ -58,6 +60,9 @@ export const getNewReleaseChart = async () => {
     LEFT JOIN artists ar ON ar.id = s.artist_id
     LEFT JOIN albums al ON al.id = s.album_id
     WHERE s.status = 'approved'
+    AND s.is_deleted = 0
+    AND (ar.id IS NULL OR ar.is_deleted = 0)
+    AND (al.id IS NULL OR al.is_deleted = 0)
     AND s.release_date IS NOT NULL
     AND s.release_date <= NOW()
     ORDER BY s.release_date DESC
@@ -104,6 +109,8 @@ export const getTop100Chart = async () => {
     FROM songs s
     LEFT JOIN artists ar ON ar.id = s.artist_id
     WHERE s.status = 'approved'
+      AND s.is_deleted = 0
+      AND (ar.id IS NULL OR ar.is_deleted = 0)
       AND s.release_date IS NOT NULL
       AND s.release_date <= NOW()
     ORDER BY s.play_count DESC
@@ -172,6 +179,9 @@ export const getRegionChart = async (regionKey, limit = 5) => {
     LEFT JOIN albums al ON al.id = s.album_id
     WHERE g.name IN (${placeholders})
       AND s.status = 'approved'
+      AND s.is_deleted = 0
+      AND (ar.id IS NULL OR ar.is_deleted = 0)
+      AND (al.id IS NULL OR al.is_deleted = 0)
       AND s.release_date IS NOT NULL
       AND s.release_date <= NOW()
     GROUP BY s.id
@@ -238,6 +248,8 @@ export const getTopWeeklySongs = async (limit = 5) => {
     WHERE sp.period_type = 'week'
       AND sp.period_start = DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
       AND s.status = 'approved'
+      AND s.is_deleted = 0
+      AND a.is_deleted = 0
       AND s.release_date IS NOT NULL
       AND s.release_date <= NOW()
     ORDER BY sp.play_count DESC
@@ -285,7 +297,8 @@ export const getWeeklyTop5 = async () => {
       ON sp.song_id = w.song_id
       AND sp.period_type = 'day'
       AND sp.period_start = d.date
-
+      WHERE s.is_deleted = 0
+      AND a.is_deleted = 0
     ORDER BY w.song_id, d.date ASC
   `);
 
@@ -305,6 +318,7 @@ export const getTop50SongsByGenres = async () => {
     JOIN song_genres sg ON sg.genre_id = g.id
     JOIN songs s ON s.id = sg.song_id
     WHERE s.status = 'approved'
+    AND s.is_deleted = 0
     AND s.release_date IS NOT NULL
     AND s.release_date <= NOW()
     GROUP BY g.id
@@ -342,6 +356,9 @@ export const getTop50SongsByGenres = async () => {
       WHERE
         sg.genre_id = ?
         AND s.status = 'approved'
+        AND s.is_deleted = 0
+        AND (ar.id IS NULL OR ar.is_deleted = 0)
+        AND (al.id IS NULL OR al.is_deleted = 0)
         AND s.release_date IS NOT NULL
         AND s.release_date <= NOW()
       ORDER BY s.play_count DESC

@@ -1,4 +1,5 @@
 import db from "../config/db.js";
+import ROLES from "../constants/roles.js";
 import { buildPaginationMeta } from "../utils/pagination.js";
 
 const createError = (status, message) => {
@@ -9,10 +10,10 @@ const createError = (status, message) => {
 
 export const listGenres = async ({ page, limit, offset, keyword } = {}) => {
   const params = [];
-  let where = "";
+  let where = "WHERE is_deleted = 0";
 
   if (keyword) {
-    where = "WHERE name LIKE ?";
+    where += " AND name LIKE ?";
     params.push(`%${keyword}%`);
   }
 
@@ -34,9 +35,10 @@ export const listGenres = async ({ page, limit, offset, keyword } = {}) => {
 };
 
 export const getGenreById = async (id) => {
-  const [rows] = await db.query("SELECT id, name FROM genres WHERE id = ?", [
-    id,
-  ]);
+  const [rows] = await db.query(
+    "SELECT id, name FROM genres WHERE id = ? AND is_deleted = 0",
+    [id]
+  );
   return rows[0];
 };
 
@@ -95,10 +97,80 @@ export const deleteGenre = async (id) => {
   }
 };
 
+export const softDeleteGenre = async (id, { deletedBy, deletedByRole }) => {
+  if (deletedByRole && deletedByRole !== ROLES.ADMIN) {
+    throw createError(403, "Forbidden");
+  }
+
+  const [rows] = await db.query(
+    "SELECT id, is_deleted FROM genres WHERE id = ?",
+    [id]
+  );
+  if (!rows[0]) {
+    throw createError(404, "Genre not found");
+  }
+  if (rows[0].is_deleted) {
+    throw createError(409, "Genre already deleted");
+  }
+
+  await db.query(
+    `
+    UPDATE genres
+    SET is_deleted = 1,
+        deleted_by = ?,
+        deleted_by_role = ?,
+        deleted_at = NOW()
+    WHERE id = ?
+    `,
+    [deletedBy || null, deletedByRole || null, id]
+  );
+};
+
+export const restoreGenre = async (
+  id,
+  { requesterRole }
+) => {
+  if (requesterRole && requesterRole !== ROLES.ADMIN) {
+    throw createError(403, "Forbidden");
+  }
+
+  const [rows] = await db.query(
+    `
+    SELECT id, is_deleted
+    FROM genres
+    WHERE id = ?
+    `,
+    [id]
+  );
+  const genre = rows[0];
+  if (!genre) {
+    throw createError(404, "Genre not found");
+  }
+  if (!genre.is_deleted) {
+    throw createError(400, "Genre is not deleted");
+  }
+
+  await db.query(
+    `
+    UPDATE genres
+    SET is_deleted = 0,
+        deleted_by = NULL,
+        deleted_by_role = NULL,
+        deleted_at = NULL
+    WHERE id = ?
+    `,
+    [id]
+  );
+
+  return getGenreById(id);
+};
+
 export default {
   listGenres,
   getGenreById,
   createGenre,
   updateGenre,
   deleteGenre,
+  softDeleteGenre,
+  restoreGenre,
 };

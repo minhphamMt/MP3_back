@@ -38,6 +38,12 @@ router.delete(
   rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
   albumController.deleteAlbumHandler
 );
+router.patch(
+  "/:id/restore",
+  authMiddleware,
+  rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
+  albumController.restoreAlbumHandler
+);
 router.post(
   "/:id/cover",
   authMiddleware,
