@@ -392,9 +392,41 @@ export const updateArtist = async (
 };
 
 export const deleteArtist = async (id) => {
-  const [result] = await db.query("DELETE FROM artists WHERE id = ?", [id]);
-  if (!result.affectedRows) {
-    throw createError(404, "Artist not found");
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const [artists] = await connection.query(
+      "SELECT id FROM artists WHERE id = ?",
+      [id]
+    );
+    if (!artists[0]) {
+      throw createError(404, "Artist not found");
+    }
+
+    await connection.query(
+      `
+      DELETE FROM songs
+      WHERE artist_id = ?
+        OR album_id IN (SELECT id FROM albums WHERE artist_id = ?)
+      `,
+      [id, id]
+    );
+    await connection.query("DELETE FROM albums WHERE artist_id = ?", [id]);
+    const [result] = await connection.query(
+      "DELETE FROM artists WHERE id = ?",
+      [id]
+    );
+    if (!result.affectedRows) {
+      throw createError(404, "Artist not found");
+    }
+
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
   }
 };
 export const softDeleteArtist = async (id, { deletedBy, deletedByRole }) => {

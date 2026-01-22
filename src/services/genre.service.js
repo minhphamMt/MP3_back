@@ -42,6 +42,14 @@ export const getGenreById = async (id) => {
   return rows[0];
 };
 
+export const getGenreByIdWithDeleted = async (id) => {
+  const [rows] = await db.query(
+    "SELECT id, name, is_deleted FROM genres WHERE id = ?",
+    [id]
+  );
+  return rows[0];
+};
+
 export const createGenre = async (name) => {
   const normalized = String(name || "").trim();
   if (!normalized) {
@@ -91,9 +99,33 @@ export const updateGenre = async (id, name) => {
 };
 
 export const deleteGenre = async (id) => {
-  const [result] = await db.query("DELETE FROM genres WHERE id = ?", [id]);
-  if (!result.affectedRows) {
-    throw createError(404, "Genre not found");
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const [genres] = await connection.query(
+      "SELECT id FROM genres WHERE id = ?",
+      [id]
+    );
+    if (!genres[0]) {
+      throw createError(404, "Genre not found");
+    }
+
+    await connection.query("DELETE FROM song_genres WHERE genre_id = ?", [id]);
+    const [result] = await connection.query(
+      "DELETE FROM genres WHERE id = ?",
+      [id]
+    );
+    if (!result.affectedRows) {
+      throw createError(404, "Genre not found");
+    }
+
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
   }
 };
 
@@ -168,6 +200,7 @@ export const restoreGenre = async (
 export default {
   listGenres,
   getGenreById,
+  getGenreByIdWithDeleted,
   createGenre,
   updateGenre,
   deleteGenre,

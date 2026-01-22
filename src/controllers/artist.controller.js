@@ -1,5 +1,6 @@
 import {
   createArtist,
+  deleteArtist,
   softDeleteArtist,
   restoreArtist,
   getArtistById,
@@ -142,11 +143,27 @@ export const updateArtistHandler = async (req, res, next) => {
 
 export const deleteArtistHandler = async (req, res, next) => {
   try {
+   let existingArtist = null;
+
     if (req.user?.role === ROLES.ARTIST) {
-      const artistProfile = await getArtistByUserId(req.user.id);
+      const artistProfile = await getArtistByUserIdWithDeleted(req.user.id);
       if (!artistProfile || Number(req.params.id) !== artistProfile.id) {
         return errorResponse(res, "Forbidden", 403);
       }
+      existingArtist = artistProfile;
+    } else {
+      existingArtist = await getArtistById(req.params.id, {
+        includeUnreleased: true,
+        includeDeleted: true,
+      });
+      if (!existingArtist) {
+        return errorResponse(res, "Artist not found", 404);
+      }
+    }
+
+    if (existingArtist.is_deleted) {
+      await deleteArtist(req.params.id);
+      return successResponse(res, { message: "Artist permanently deleted" });
     }
 
     await softDeleteArtist(req.params.id, {

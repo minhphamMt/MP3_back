@@ -252,9 +252,33 @@ export const updateAlbum = async (
 
 
 export const deleteAlbum = async (id) => {
-  const [result] = await db.query("DELETE FROM albums WHERE id = ?", [id]);
-  if (!result.affectedRows) {
-    throw createError(404, "Album not found");
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const [albums] = await connection.query(
+      "SELECT id FROM albums WHERE id = ?",
+      [id]
+    );
+    if (!albums[0]) {
+      throw createError(404, "Album not found");
+    }
+
+    await connection.query("DELETE FROM songs WHERE album_id = ?", [id]);
+    const [result] = await connection.query(
+      "DELETE FROM albums WHERE id = ?",
+      [id]
+    );
+    if (!result.affectedRows) {
+      throw createError(404, "Album not found");
+    }
+
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
   }
 };
 

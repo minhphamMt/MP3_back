@@ -17,18 +17,28 @@ export const getSystemOverview = async () => {
     approvedSongs,
     rejectedSongs,
   ] = await Promise.all([
-    getCount("SELECT COUNT(*) AS count FROM artists WHERE is_deleted = 0"),
+    getCount("SELECT COUNT(*) AS count FROM users"),
+    getCount("SELECT COUNT(*) AS count FROM artists"),
     getCount("SELECT COUNT(*) AS count FROM songs WHERE is_deleted = 0"),
     getCount("SELECT COUNT(*) AS count FROM albums WHERE is_deleted = 0"),
-    getCount("SELECT COUNT(*) AS count FROM songs WHERE is_deleted = 0 AND status = ?", [
-      SONG_STATUS.PENDING,
-    ]),
-    getCount("SELECT COUNT(*) AS count FROM songs WHERE is_deleted = 0 AND status = ?", [
-      SONG_STATUS.APPROVED,
-    ]),
-    getCount("SELECT COUNT(*) AS count FROM songs WHERE is_deleted = 0 AND status = ?", [
-      SONG_STATUS.REJECTED,
-    ]),
+
+    // ✅ chưa bị xoá + status = pending
+    getCount(
+      "SELECT COUNT(*) AS count FROM songs WHERE is_deleted = 0 AND status = ?",
+      [SONG_STATUS.PENDING]
+    ),
+
+    // ✅ chưa bị xoá + status = approved
+    getCount(
+      "SELECT COUNT(*) AS count FROM songs WHERE is_deleted = 0 AND status = ?",
+      [SONG_STATUS.APPROVED]
+    ),
+
+    // ✅ chưa bị xoá + status = rejected
+    getCount(
+      "SELECT COUNT(*) AS count FROM songs WHERE is_deleted = 0 AND status = ?",
+      [SONG_STATUS.REJECTED]
+    ),
   ]);
 
   return {
@@ -43,6 +53,7 @@ export const getSystemOverview = async () => {
     },
   };
 };
+
 
 export const getWeeklyTopSongs = async (limit = 5) =>
   getTopWeeklySongs(limit);

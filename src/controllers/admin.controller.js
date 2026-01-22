@@ -11,6 +11,8 @@ import { successResponse } from "../utils/response.js";
 import SONG_STATUS from "../constants/song-status.js";
 import {
   createGenre,
+  deleteGenre,
+  getGenreByIdWithDeleted,
   softDeleteGenre,
   restoreGenre,
   listGenres,
@@ -231,6 +233,15 @@ export const updateGenreRequest = async (req, res, next) => {
 
 export const deleteGenreRequest = async (req, res, next) => {
   try {
+    const genre = await getGenreByIdWithDeleted(req.params.id);
+    if (!genre) {
+      return next(createHttpError(404, "Genre not found"));
+    }
+
+    if (genre.is_deleted) {
+      await deleteGenre(req.params.id);
+      return successResponse(res, { message: "Genre permanently deleted" });
+    }
     await softDeleteGenre(req.params.id, {
       deletedBy: req.user?.id,
       deletedByRole: req.user?.role,

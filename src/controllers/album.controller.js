@@ -1,5 +1,6 @@
 import {
   createAlbum,
+  deleteAlbum,
   softDeleteAlbum,
   restoreAlbum,
   getAlbumById,
@@ -170,24 +171,30 @@ export const updateAlbumHandler = async (req, res, next) => {
 
 export const deleteAlbumHandler = async (req, res, next) => {
   try {
+    const existingAlbum = await getAlbumById(req.params.id, {
+      includeSongs: false,
+      includeUnreleased: true,
+      includeDeleted: true,
+    });
+    if (!existingAlbum) {
+      return errorResponse(res, "Album not found", 404);
+    }
     if (req.user?.role === ROLES.ARTIST) {
       const artist = await getArtistByUserId(req.user.id);
       if (!artist) {
         return errorResponse(res, "Artist profile not found", 403);
       }
 
-      const existingAlbum = await getAlbumById(req.params.id, {
-        includeSongs: false,
-        includeUnreleased: true,
-        includeDeleted: true,
-      });
-      if (!existingAlbum) {
-        return errorResponse(res, "Album not found", 404);
-      }
       if (existingAlbum.artist_id !== artist.id) {
         return errorResponse(res, "Forbidden", 403);
       }
     }
+
+     if (existingAlbum.is_deleted) {
+      await deleteAlbum(req.params.id);
+      return successResponse(res, { message: "Album permanently deleted" });
+    }
+    
     await softDeleteAlbum(req.params.id, {
       deletedBy: req.user?.id,
       deletedByRole: req.user?.role,
