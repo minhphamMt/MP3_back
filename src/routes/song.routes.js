@@ -10,11 +10,13 @@ import {
   uploadSongMedia,
 } from "../middlewares/upload.middleware.js";
 import rbacMiddleware from "../middlewares/rbac.middleware.js";
+import { getSongLyrics } from "../controllers/lyrics.controller.js";
 const router = Router();
 
 router.get("/", optionalAuthMiddleware, songController.getSongs);
 router.get("/art", optionalAuthMiddleware, songController.getSongsByArtist);
 router.get("/liked", authMiddleware, songController.getLikedSongss);
+router.get("/:id/lyrics", optionalAuthMiddleware, getSongLyrics);
 router.get("/:id", optionalAuthMiddleware, songController.getSong);
 router.get("/:id/stats", songController.getSongEngagement);
 router.post(
