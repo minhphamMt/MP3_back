@@ -29,6 +29,7 @@ export const listAlbums = async ({
   status,
   artistId,
   genres,
+  keyword,
   sort = "release_date",
   order = "desc",
   includeUnreleased = false,
@@ -47,6 +48,7 @@ const sortOrder = order.toUpperCase() === "ASC" ? "ASC" : "DESC";
 
 let where = "WHERE 1=1";
 const params = [];
+const normalizedKeyword = keyword?.trim();
 
 if (!includeDeleted) {
   where += " AND a.is_deleted = 0";
@@ -68,6 +70,22 @@ where += " AND a.artist_id = ?";
 params.push(artistId);
 }
 
+if (normalizedKeyword) {
+  where += " AND a.title LIKE ?";
+  params.push(`%${normalizedKeyword}%`);
+}
+
+const [countRows] = await db.query(
+  `SELECT COUNT(*) as total FROM albums a ${where}`,
+  params
+);
+const total = countRows[0]?.total || 0;
+
+const dataParams = [];
+if (status) {
+  dataParams.push(status);
+}
+dataParams.push(...params);
 
 const sql = `
   SELECT
@@ -84,17 +102,15 @@ const sql = `
   LIMIT ? OFFSET ?
 `;
 
+dataParams.push(limit, offset);
 
 
-params.push(limit, offset);
-
-
-const [rows] = await db.query(sql, params);
+const [rows] = await db.query(sql, dataParams);
 
 
 return {
 items: rows,
-meta: { page, limit },
+meta: buildPaginationMeta(page, limit, total),
 };
 };
 

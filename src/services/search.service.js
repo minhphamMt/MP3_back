@@ -64,7 +64,7 @@ const searchSongs = async (keyword, { limit, offset, userId }) => {
 
   return rows;
 };
-const searchSongsAdmin = async (keyword, { limit, offset }) => {
+const searchSongsAdmin = async (keyword, { limit, offset, includeDeleted }) => {
   const params = [
     `${keyword}%`,
     `%${keyword}%`,
@@ -72,6 +72,7 @@ const searchSongsAdmin = async (keyword, { limit, offset }) => {
     limit,
     offset,
   ];
+  const deletedFilter = includeDeleted ? "" : "AND s.is_deleted = 0";
   const [rows] = await db.query(
     `
     SELECT
@@ -84,7 +85,7 @@ const searchSongsAdmin = async (keyword, { limit, offset }) => {
       ) AS score
     FROM songs s
     WHERE s.title LIKE ?
-    AND s.is_deleted = 0
+     ${deletedFilter}
     ORDER BY score DESC
     LIMIT ? OFFSET ?
     `,
@@ -93,7 +94,8 @@ const searchSongsAdmin = async (keyword, { limit, offset }) => {
 
   return rows;
 };
-const searchArtists = async (keyword, { limit, offset }) => {
+const searchArtists = async (keyword, { limit, offset, includeDeleted }) => {
+  const deletedFilter = includeDeleted ? "" : "AND a.is_deleted = 0";
   const [rows] = await db.query(
     `
     SELECT
@@ -103,7 +105,7 @@ const searchArtists = async (keyword, { limit, offset }) => {
       (a.follow_count * 0.01) AS score
     FROM artists a
     WHERE a.name LIKE ?
-    AND a.is_deleted = 0
+    ${deletedFilter}
     ORDER BY score DESC
     LIMIT ? OFFSET ?
     `,
@@ -153,7 +155,14 @@ const searchUsers = async (keyword, { limit, offset }) => {
   return rows;
 };
 
-const searchAlbums = async (keyword, { limit, offset }) => {
+const searchAlbums = async (
+  keyword,
+  { limit, offset, includeDeleted, includeUnreleased }
+) => {
+  const deletedFilter = includeDeleted ? "" : "AND al.is_deleted = 0";
+  const releaseFilter = includeUnreleased
+    ? ""
+    : "AND al.release_date IS NOT NULL AND al.release_date <= NOW()";
   const [rows] = await db.query(
     `
     SELECT
@@ -162,9 +171,8 @@ const searchAlbums = async (keyword, { limit, offset }) => {
       (al.title LIKE ?) * 3 AS score
     FROM albums al
     WHERE al.title LIKE ?
-    AND al.is_deleted = 0
-    AND al.release_date IS NOT NULL
-    AND al.release_date <= NOW()
+    ${deletedFilter}
+    ${releaseFilter}
     ORDER BY score DESC
     LIMIT ? OFFSET ?
     `,
@@ -200,9 +208,13 @@ export const searchEntities = async (keyword, options) => {
 
 export const searchAdminEntities = async (keyword, options) => {
   const [songs, artists, albums, users] = await Promise.all([
-    searchSongsAdmin(keyword, options),
-    searchArtists(keyword, options),
-    searchAlbums(keyword, options),
+    searchSongsAdmin(keyword, { ...options, includeDeleted: true }),
+    searchArtists(keyword, { ...options, includeDeleted: true }),
+    searchAlbums(keyword, {
+      ...options,
+      includeDeleted: true,
+      includeUnreleased: true,
+    }),
     searchUsers(keyword, options),
   ]);
 

@@ -38,12 +38,14 @@ export const getArtists = async (req, res, next) => {
   try {
     const { page, limit, offset } = getPaginationParams(req.query);
     const { status } = req.query;
+    const keyword = (req.query.q || req.query.keyword || "").trim();
 
     const result = await listArtists({
       page,
       limit,
       offset,
       status,
+      keyword: keyword || undefined,
       genres: parseGenreQuery(req.query),
     });
 

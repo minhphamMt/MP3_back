@@ -41,9 +41,11 @@ export const listArtists = async ({
   offset,
   genres = [],
   status,
+  keyword,
   includeDeleted = false,
 }) => {
   const normalizedGenres = normalizeGenres(genres);
+  const normalizedKeyword = keyword?.trim();
   const filters = [];
   const params = [];
 
@@ -51,6 +53,11 @@ export const listArtists = async ({
     filters.push("ar.is_deleted = 0");
   }
 
+  if (normalizedKeyword) {
+    filters.push("ar.name LIKE ?");
+    params.push(`%${normalizedKeyword}%`);
+  }
+  
   if (status || normalizedGenres.length > 0) {
     const songFilters = ["s.artist_id = ar.id"];
     const songParams = [];

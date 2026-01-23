@@ -59,6 +59,7 @@ export const getAlbums = async (req, res, next) => {
       sort = "release_date",
       order = "desc",
     } = req.query;
+    const keyword = (req.query.q || req.query.keyword || "").trim();
 
     const includeUnreleased = await resolveIncludeUnreleased(req, {
       artistId: artistId || artist_id_param,
@@ -71,6 +72,7 @@ export const getAlbums = async (req, res, next) => {
       status,
       artistId: artistId || artist_id_param,
       genres: parseGenreQuery(req.query),
+      keyword: keyword || undefined,
       includeUnreleased,
 
       // 🔴 THÊM 2 DÒNG NÀY
