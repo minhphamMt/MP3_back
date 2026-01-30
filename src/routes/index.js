@@ -11,6 +11,7 @@ import analyticsRoutes from "./analytics.routes.js";
 import adminRoutes from "./admin.routes.js";
 import uploadRoutes from "./upload.routes.js";
 import recommendationRoutes from "./recommendation.routes.js";
+import songRecommendRoutes from "./song-recommend.routes.js";
 import trashRoutes from "./trash.routes.js";
 import { errorResponse, successResponse } from "../utils/response.js";
 import historyRoutes from "./history.routes.js";
@@ -44,6 +45,7 @@ const routeMappings = [
   { path: "/admin", handler: adminRoutes },
   { path: "/uploads", handler: uploadRoutes },
   { path: "/recommendations", handler: recommendationRoutes },
+  { path: "/recommend", handler: songRecommendRoutes },
   { path: "/history", handler: historyRoutes },
    { path: "/charts", handler: chartRoutes },
    { path: "/trash", handler: trashRoutes },
