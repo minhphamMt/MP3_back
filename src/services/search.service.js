@@ -96,16 +96,23 @@ const searchSongsAdmin = async (keyword, { limit, offset, includeDeleted }) => {
 };
 const searchArtists = async (keyword, { limit, offset, includeDeleted }) => {
   const deletedFilter = includeDeleted ? "" : "AND a.is_deleted = 0";
+  const songDeletedFilter = includeDeleted ? "" : "AND s.is_deleted = 0";
+
   const [rows] = await db.query(
     `
     SELECT
       a.*,
+      COUNT(s.id) AS song_count,
       (a.name LIKE ?) * 5 +
       (a.name LIKE ?) * 3 +
       (a.follow_count * 0.01) AS score
     FROM artists a
+    LEFT JOIN songs s
+      ON s.artist_id = a.id
+      ${songDeletedFilter}
     WHERE a.name LIKE ?
     ${deletedFilter}
+    GROUP BY a.id
     ORDER BY score DESC
     LIMIT ? OFFSET ?
     `,
@@ -120,6 +127,7 @@ const searchArtists = async (keyword, { limit, offset, includeDeleted }) => {
 
   return rows;
 };
+
 const searchUsers = async (keyword, { limit, offset }) => {
   const [rows] = await db.query(
     `

@@ -1,21 +1,36 @@
 import db from "../config/db.js";
 
 /**
+ * =========================
  * CONFIG
+ * =========================
  */
+
+// candidate size
 const AUDIO_CANDIDATES = 150;
 const META_CANDIDATES = 150;
+
+// final results
 const FINAL_RESULTS = 15;
 
-// weights
-const W_AUDIO = 0.6;
-const W_META = 0.4;
-const W_ARTIST = 0.3;
-const W_ALBUM = 0.05;
+// weight
+const W_AUDIO = 0.5;
+const W_META = 0.5;
+const W_ARTIST_BONUS = 0.45;
+const W_ALBUM_BONUS = 0.10;
+
+// diversity
+const MAX_PER_ARTIST = 3;
+
+// history filter
+const RECENT_HOURS = 2;
 
 /**
- * UTIL
+ * =========================
+ * VECTOR UTILS
+ * =========================
  */
+
 const parseVector = (value) => {
   if (!value) return null;
   try {
@@ -29,25 +44,34 @@ const parseVector = (value) => {
 export const cosineSimilarity = (a, b) => {
   if (!a || !b || a.length !== b.length) return 0;
 
-  let dot = 0, na = 0, nb = 0;
+  let dot = 0,
+    na = 0,
+    nb = 0;
+
   for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];
     na += a[i] * a[i];
     nb += b[i] * b[i];
   }
+
   if (na === 0 || nb === 0) return 0;
   return dot / (Math.sqrt(na) * Math.sqrt(nb));
 };
 
 /**
- * LOAD QUERY SONG + EMBEDDINGS
+ * =========================
+ * LOAD QUERY SONG
+ * =========================
  */
+
 const getQuerySong = async (songId) => {
   const [[song]] = await db.query(
     `
     SELECT id, title, artist_id, album_id
     FROM songs
-    WHERE id = ? AND status='approved' AND is_deleted=0
+    WHERE id = ?
+      AND status = 'approved'
+      AND is_deleted = 0
     LIMIT 1
     `,
     [songId]
@@ -75,12 +99,15 @@ const getQuerySong = async (songId) => {
 };
 
 /**
- * LOAD ALL CANDIDATES
+ * =========================
+ * LOAD CANDIDATES (FILTER RECENT)
+ * =========================
  */
-const getAllCandidates = async (songId) => {
+
+const getAllCandidates = async (songId, userId) => {
   const [rows] = await db.query(
     `
-    SELECT 
+    SELECT
       s.id,
       s.title,
       s.artist_id,
@@ -91,10 +118,18 @@ const getAllCandidates = async (songId) => {
     LEFT JOIN song_embeddings ae ON ae.song_id = s.id AND ae.type = 'audio'
     LEFT JOIN song_embeddings me ON me.song_id = s.id AND me.type = 'metadata'
     WHERE s.id != ?
-      AND s.status='approved'
-      AND s.is_deleted=0
+      AND s.status = 'approved'
+      AND s.is_deleted = 0
+      AND (
+        ? IS NULL OR s.id NOT IN (
+          SELECT song_id
+          FROM listening_history
+          WHERE user_id = ?
+            AND listened_at >= NOW() - INTERVAL ? HOUR
+        )
+      )
     `,
-    [songId]
+    [songId, userId, userId, RECENT_HOURS]
   );
 
   return rows.map((r) => ({
@@ -108,9 +143,12 @@ const getAllCandidates = async (songId) => {
 };
 
 /**
+ * =========================
  * MAIN RECOMMENDATION
+ * =========================
  */
-export const getSimilarSongs = async (songId) => {
+
+export const getSimilarSongs = async (songId, userId = null) => {
   const query = await getQuerySong(songId);
   if (!query) {
     const err = new Error("Song not found");
@@ -118,9 +156,11 @@ export const getSimilarSongs = async (songId) => {
     throw err;
   }
 
-  const candidates = await getAllCandidates(songId);
+  const candidates = await getAllCandidates(songId, userId);
 
-  // === AUDIO SIMILARITY ===
+  /**
+   * === STAGE 1: AUDIO RANKING
+   */
   const audioRanked = query.audioVec
     ? candidates
         .map((c) => ({
@@ -133,7 +173,9 @@ export const getSimilarSongs = async (songId) => {
         .slice(0, AUDIO_CANDIDATES)
     : [];
 
-  // === METADATA SIMILARITY ===
+  /**
+   * === STAGE 2: METADATA RANKING
+   */
   const metaRanked = query.metaVec
     ? candidates
         .map((c) => ({
@@ -146,11 +188,14 @@ export const getSimilarSongs = async (songId) => {
         .slice(0, META_CANDIDATES)
     : [];
 
-  // === MERGE UNIQUE ===
-  const map = new Map();
+  /**
+   * === MERGE UNIQUE CANDIDATES
+   */
+  const mergedMap = new Map();
+
   [...audioRanked, ...metaRanked].forEach((c) => {
-    if (!map.has(c.id)) {
-      map.set(c.id, {
+    if (!mergedMap.has(c.id)) {
+      mergedMap.set(c.id, {
         ...c,
         audioSim: c.audioSim || 0,
         metaSim: c.metaSim || 0,
@@ -158,30 +203,54 @@ export const getSimilarSongs = async (songId) => {
     }
   });
 
-  // === FINAL RERANK ===
-  const finalRanked = Array.from(map.values())
+  /**
+   * === FINAL RERANK
+   */
+  const reranked = Array.from(mergedMap.values())
     .map((c) => {
       let score =
         W_AUDIO * c.audioSim +
         W_META * c.metaSim;
 
-      if (c.artistId === query.song.artist_id) score += W_ARTIST;
-      if (c.albumId === query.song.album_id) score += W_ALBUM;
+      if (c.artistId === query.song.artist_id) {
+        score += W_ARTIST_BONUS;
+      }
+
+      if (c.albumId === query.song.album_id) {
+        score += W_ALBUM_BONUS;
+      }
 
       return {
         songId: c.id,
         title: c.title,
+        artistId: c.artistId,
+        albumId: c.albumId,
         score,
       };
     })
-    .sort((a, b) => b.score - a.score)
-    .slice(0, FINAL_RESULTS)
-    .map((r) => ({
-      ...r,
-      score: Number(r.score.toFixed(6)),
-    }));
+    .sort((a, b) => b.score - a.score);
 
-  return finalRanked;
+  /**
+   * === DIVERSITY FILTER (LIMIT PER ARTIST)
+   */
+  const artistCount = {};
+  const finalResults = [];
+
+  for (const r of reranked) {
+    artistCount[r.artistId] = artistCount[r.artistId] || 0;
+    if (artistCount[r.artistId] >= MAX_PER_ARTIST) continue;
+
+    artistCount[r.artistId]++;
+    finalResults.push({
+      songId: r.songId,
+      title: r.title,
+      score: Number(r.score.toFixed(6)),
+    });
+
+    if (finalResults.length >= FINAL_RESULTS) break;
+  }
+
+  return finalResults;
 };
 
 export default {

@@ -753,6 +753,7 @@ export const listSongsByArtist = async (
       s.cover_url,
       s.album_id,
       s.status,
+      s.reject_reason,
       al.title AS album_title
     FROM songs s
     LEFT JOIN albums al ON s.album_id = al.id
