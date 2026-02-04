@@ -29,8 +29,10 @@ const buildPublicUrl = (key) => {
   }
 
   if (storageConfig.driver === "gcs") {
-    return `https://storage.googleapis.com/${storageConfig.gcs.bucket}/${key}`;
-  }
+  const encodedPath = encodeURIComponent(key);
+  return `https://firebasestorage.googleapis.com/v0/b/${storageConfig.gcs.bucket}/o/${encodedPath}?alt=media`;
+}
+
 
   return key;
 };
