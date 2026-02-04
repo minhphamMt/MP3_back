@@ -10,6 +10,7 @@ import {
 import { getLikedSongsByUser } from "../services/song.service.js";
 import { successResponse } from "../utils/response.js";
 import { getLikedAlbums } from "../services/album-like.service.js";
+import { uploadMediaFile } from "../services/storage.service.js";
 export const getCurrentUser = async (req, res, next) => {
   try {
     const user = await getUserById(req.user.id);
@@ -127,7 +128,13 @@ export const uploadAvatar = async (req, res, next) => {
       return res.status(400).json({ message: "No file uploaded" });
     }
 
-    const avatarUrl = `/uploads/user/avatar/${req.file.filename}`;
+    const uploadResult = await uploadMediaFile({
+      folder: "uploads/user/avatar",
+      file: req.file,
+      prefix: "avatar",
+      ownerId: req.user.id,
+    });
+    const avatarUrl = uploadResult.publicUrl;
 
     const user = await updateUserProfile(req.user.id, {
       avatar_url: avatarUrl,
@@ -147,7 +154,13 @@ export const uploadUserAvatarByAdmin = async (req, res, next) => {
     if (!req.file) {
       return res.status(400).json({ message: "No file uploaded" });
     }
-    const avatarUrl = `/uploads/user/avatar/${req.file.filename}`;
+    const uploadResult = await uploadMediaFile({
+      folder: "uploads/user/avatar",
+      file: req.file,
+      prefix: "avatar",
+      ownerId: req.params.id,
+    });
+    const avatarUrl = uploadResult.publicUrl;
 
     const user = await updateUserProfile(req.params.id, {
       avatar_url: avatarUrl,

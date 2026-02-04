@@ -13,6 +13,7 @@ import {
 import { getPaginationParams } from "../utils/pagination.js";
 import { errorResponse, successResponse } from "../utils/response.js";
 import ROLES from "../constants/roles.js";
+import { uploadMediaFile } from "../services/storage.service.js";
 
 const parseGenreQuery = (query) => query.genre || query.genres || [];
 const resolveIncludeUnreleased = async ({ user }, artistId) => {
@@ -100,7 +101,13 @@ export const createArtistHandler = async (req, res, next) => {
 
     const payload = { ...req.body };
     if (req.file) {
-      payload.avatar_url = `/uploads/images/${req.file.filename}`;
+      const uploadResult = await uploadMediaFile({
+        folder: "uploads/images",
+        file: req.file,
+        prefix: "artist-avatar",
+        ownerId: req.user?.id,
+      });
+      payload.avatar_url = uploadResult.publicUrl;
     }
 
     if (req.user?.role === ROLES.ARTIST) {
@@ -126,7 +133,13 @@ export const updateArtistHandler = async (req, res, next) => {
 
     const payload = { ...req.body };
     if (req.file) {
-      payload.avatar_url = `/uploads/images/${req.file.filename}`;
+      const uploadResult = await uploadMediaFile({
+        folder: "uploads/images",
+        file: req.file,
+        prefix: "artist-avatar",
+        ownerId: req.user?.id,
+      });
+      payload.avatar_url = uploadResult.publicUrl;
     }
 
     if (req.user?.role === ROLES.ARTIST) {
@@ -219,7 +232,13 @@ export const uploadArtistAvatar = async (req, res, next) => {
       return errorResponse(res, "Artist profile not found", 404);
     }
 
-    const avatarUrl = `/uploads/images/${req.file.filename}`;
+    const uploadResult = await uploadMediaFile({
+      folder: "uploads/images",
+      file: req.file,
+      prefix: "artist-avatar",
+      ownerId: req.user?.id,
+    });
+    const avatarUrl = uploadResult.publicUrl;
 
     const updatedArtist = await updateArtist(artist.id, {
       avatar_url: avatarUrl,

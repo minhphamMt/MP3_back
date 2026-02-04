@@ -12,7 +12,7 @@ const defaultLocalRoot =
     : path.resolve("/mnt/d/music_dump");
 
 const storageConfig = {
-  driver: process.env.STORAGE_DRIVER || "local",
+  driver: process.env.STORAGE_DRIVER || "gcs",
   cdnBaseUrl: process.env.STORAGE_CDN_BASE_URL || "",
   local: {
     uploadDir: resolvePath(process.env.LOCAL_UPLOAD_DIR || defaultLocalRoot),

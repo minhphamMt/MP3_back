@@ -55,6 +55,139 @@ if (storageConfig.driver === "gcs") {
   });
 }
 
+const normalizeKeyForDriver = (key) => {
+  const trimmed = key.replace(/^\/+/, "");
+
+  if (storageConfig.driver === "local" && trimmed.startsWith("uploads/")) {
+    return trimmed.slice("uploads/".length);
+  }
+
+  return trimmed;
+};
+
+export const resolvePublicUrl = (value) => {
+  if (!value) {
+    return value;
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+
+  if (/^gs:\/\//i.test(value)) {
+    return value;
+  }
+
+  const normalized = value.startsWith("/") ? value : `/${value}`;
+
+  if (normalized.startsWith("/music/")) {
+    const musicKey = path.posix.join(
+      "uploads",
+      "music",
+      normalized.replace(/^\/music\//, "")
+    );
+    return buildPublicUrl(normalizeKeyForDriver(musicKey));
+  }
+
+  if (normalized.startsWith("/uploads/")) {
+    return buildPublicUrl(normalizeKeyForDriver(normalized.replace(/^\/+/, "")));
+  }
+
+  return buildPublicUrl(normalizeKeyForDriver(normalized.replace(/^\/+/, "")));
+};
+
+export const generateFileName = ({ prefix, ownerId, originalName }) => {
+  const ext = path.extname(originalName || "");
+  const safeOwnerId = ownerId ?? "unknown";
+  return `${prefix}-${safeOwnerId}-${Date.now()}${ext}`;
+};
+
+export const uploadMediaFile = async ({
+  folder,
+  file,
+  prefix,
+  ownerId,
+}) => {
+  if (!file) {
+    return null;
+  }
+
+  const fileName = generateFileName({
+    prefix,
+    ownerId,
+    originalName: file.originalname,
+  });
+  const key = path.posix.join(folder, fileName);
+
+  const uploaded = await uploadBuffer({
+    key,
+    buffer: file.buffer,
+    contentType: file.mimetype,
+  });
+
+  return {
+    ...uploaded,
+    fileName,
+  };
+};
+
+export const uploadBuffer = async ({ key, buffer, contentType }) => {
+  const normalizedKey = normalizeKeyForDriver(key);
+
+  if (storageConfig.driver === "s3") {
+    if (!storageConfig.s3.bucket || !storageConfig.s3.region) {
+      throw new Error("S3 bucket and region are required for S3 storage");
+    }
+
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: storageConfig.s3.bucket,
+        Key: normalizedKey,
+        Body: buffer,
+        ContentType: contentType,
+        ACL: "public-read",
+      })
+    );
+
+    return {
+      provider: "s3",
+      path: normalizedKey,
+      publicUrl: buildPublicUrl(normalizedKey),
+    };
+  }
+
+  if (storageConfig.driver === "gcs") {
+    if (!storageConfig.gcs.bucket || !storageConfig.gcs.projectId) {
+      throw new Error("GCS bucket and projectId are required for GCS storage");
+    }
+
+    const bucket = gcsClient.bucket(storageConfig.gcs.bucket);
+    const file = bucket.file(normalizedKey);
+
+    await file.save(buffer, {
+      resumable: false,
+      contentType,
+    });
+    await file.makePublic();
+
+    return {
+      provider: "gcs",
+      path: normalizedKey,
+      publicUrl: buildPublicUrl(normalizedKey),
+    };
+  }
+
+  const fullPath = path.join(storageConfig.local.uploadDir, normalizedKey);
+  await ensureDirectory(path.dirname(fullPath));
+  await fs.promises.writeFile(fullPath, buffer);
+
+  return {
+    provider: "local",
+    path: normalizedKey,
+    publicUrl: buildPublicUrl(normalizedKey),
+  };
+};
+
 export const createUploadTarget = async ({
   resourceType,
   mediaType,
@@ -126,4 +259,7 @@ export const createUploadTarget = async ({
 
 export default {
   createUploadTarget,
+  uploadBuffer,
+  resolvePublicUrl,
+  generateFileName,
 };

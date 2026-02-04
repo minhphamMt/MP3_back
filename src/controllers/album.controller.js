@@ -16,6 +16,7 @@ import {
 } from "../services/album-like.service.js";
 import ROLES from "../constants/roles.js";
 import { getArtistByUserId, getArtistByUserIdWithDeleted } from "../services/artist.service.js";
+import { uploadMediaFile } from "../services/storage.service.js";
 const parseGenreQuery = (query) => query.genre || query.genres || [];
 const resolveIncludeUnreleased = async ({ user }, { artistId, albumId } = {}) => {
   if (!user) return false;
@@ -108,10 +109,16 @@ export const getAlbum = async (req, res, next) => {
 };
 export const createAlbumHandler = async (req, res, next) => {
   try {
-     const payload = { ...req.body };
+    const payload = { ...req.body };
 
     if (req.file) {
-      payload.cover_url = `/uploads/albums/${req.file.filename}`;
+      const uploadResult = await uploadMediaFile({
+        folder: "uploads/albums",
+        file: req.file,
+        prefix: "album-cover",
+        ownerId: req.user?.id,
+      });
+      payload.cover_url = uploadResult.publicUrl;
     }
 
     if (req.user?.role === ROLES.ADMIN && !payload.artist_id) {
@@ -137,9 +144,15 @@ export const createAlbumHandler = async (req, res, next) => {
 export const updateAlbumHandler = async (req, res, next) => {
   try {
     const payload = { ...req.body };
-    const coverUrl = req.file
-      ? `/uploads/albums/${req.file.filename}`
+    const coverResult = req.file
+      ? await uploadMediaFile({
+          folder: "uploads/albums",
+          file: req.file,
+          prefix: "album-cover",
+          ownerId: req.user?.id,
+        })
       : null;
+    const coverUrl = coverResult ? coverResult.publicUrl : null;
 
     if (req.user?.role === ROLES.ARTIST) {
       const artist = await getArtistByUserId(req.user.id);
@@ -275,7 +288,13 @@ export const uploadAlbumCoverHandler = async (req, res, next) => {
       }
     }
 
-    const coverUrl = `/uploads/albums/${req.file.filename}`;
+    const uploadResult = await uploadMediaFile({
+      folder: "uploads/albums",
+      file: req.file,
+      prefix: "album-cover",
+      ownerId: req.user?.id,
+    });
+    const coverUrl = uploadResult.publicUrl;
     const updatedAlbum = await updateAlbumCover(album.id, coverUrl);
 
     return successResponse(res, {

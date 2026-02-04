@@ -1,29 +1,4 @@
 import multer from "multer";
-import path from "path";
-import fs from "fs";
-
-const userAvatarDir = path.join(process.cwd(), "uploads/user/avatar");
-const artistAvatarDir = path.join(process.cwd(), "uploads/images");
-const songAudioDir = path.join(process.cwd(), "uploads/music");
-
-const songCoverDir = path.join(process.cwd(), "uploads/songs");
-
-[userAvatarDir, artistAvatarDir, songAudioDir, songCoverDir].forEach((dir) => {
-  fs.mkdirSync(dir, { recursive: true });
-});
-
-const createStorage = ({ destination, filenamePrefix, resolveUserId }) =>
-  multer.diskStorage({
-    destination(req, file, cb) {
-      cb(null, destination);
-    },
-    filename(req, file, cb) {
-      const ext = path.extname(file.originalname);
-      const ownerId = resolveUserId ? resolveUserId(req) : req.user?.id;
-      const name = `${filenamePrefix}-${ownerId || "unknown"}-${Date.now()}${ext}`;
-      cb(null, name);
-    },
-  });
 
 const imageFileFilter = (req, file, cb) => {
   if (!file.mimetype.startsWith("image/")) {
@@ -39,59 +14,34 @@ const audioFileFilter = (req, file, cb) => {
   cb(null, true);
 };
 
-export const uploadAvatar = multer({
-  storage: createStorage({
-    destination: userAvatarDir,
-    filenamePrefix: "avatar",
-  }),
+const memoryStorage = multer.memoryStorage();
+
+const createUploader = ({ fileFilter, limits }) =>
+  multer({
+    storage: memoryStorage,
+    fileFilter,
+    limits,
+  });
+
+export const uploadAvatar = createUploader({
   fileFilter: imageFileFilter,
   limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
 }).single("avatar");
 
-export const uploadAdminUserAvatar = multer({
-  storage: createStorage({
-    destination: userAvatarDir,
-    filenamePrefix: "avatar",
-    resolveUserId: (req) => req.params.id,
-  }),
+export const uploadAdminUserAvatar = createUploader({
   fileFilter: imageFileFilter,
   limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
 }).single("avatar");
 
-export const uploadArtistAvatar = multer({
-  storage: createStorage({
-    destination: artistAvatarDir,
-    filenamePrefix: "artist-avatar",
-  }),
+export const uploadArtistAvatar = createUploader({
   fileFilter: imageFileFilter,
   limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
 }).single("avatar");
 
-export const uploadSongAudio = multer({
-  storage: createStorage({
-    destination: songAudioDir,
-    filenamePrefix: "song-audio",
-  }),
+export const uploadSongAudio = createUploader({
   fileFilter: audioFileFilter,
   limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
 }).single("audio");
-const songMediaStorage = multer.diskStorage({
-  destination(req, file, cb) {
-    if (file.fieldname === "audio") {
-      return cb(null, songAudioDir);
-    }
-    if (file.fieldname === "cover") {
-      return cb(null, songCoverDir);
-    }
-    return cb(new Error("Unsupported field"), null);
-  },
-  filename(req, file, cb) {
-    const ext = path.extname(file.originalname);
-    const prefix = file.fieldname === "audio" ? "song-audio" : "song-cover";
-    const name = `${prefix}-${req.user.id}-${Date.now()}${ext}`;
-    cb(null, name);
-  },
-});
 
 const songMediaFilter = (req, file, cb) => {
   if (file.fieldname === "audio") {
@@ -103,8 +53,7 @@ const songMediaFilter = (req, file, cb) => {
   return cb(new Error("Unsupported field"), false);
 };
 
-export const uploadSongMedia = multer({
-  storage: songMediaStorage,
+export const uploadSongMedia = createUploader({
   fileFilter: songMediaFilter,
   limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
 }).fields([
@@ -112,26 +61,12 @@ export const uploadSongMedia = multer({
   { name: "cover", maxCount: 1 },
 ]);
 
-const albumCoverDir = path.join(process.cwd(), "uploads/albums");
-
-[albumCoverDir].forEach((dir) => {
-  fs.mkdirSync(dir, { recursive: true });
-});
-
-export const uploadAlbumCover = multer({
-  storage: createStorage({
-    destination: albumCoverDir,
-    filenamePrefix: "album-cover",
-  }),
+export const uploadAlbumCover = createUploader({
   fileFilter: imageFileFilter,
   limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
 }).single("cover");
 
-export const uploadSongCover = multer({
-  storage: createStorage({
-    destination: songCoverDir,
-    filenamePrefix: "song-cover",
-  }),
+export const uploadSongCover = createUploader({
   fileFilter: imageFileFilter,
   limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
 }).single("cover");
