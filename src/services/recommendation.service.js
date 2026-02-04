@@ -76,6 +76,7 @@ const getListeningHistoryWithMetadata = async (
     SELECT
       lh.song_id,
       s.artist_id,
+      s.album_id,
       GROUP_CONCAT(DISTINCT g.name) AS genres,
       COUNT(*) AS play_count
     FROM listening_history lh
@@ -87,7 +88,7 @@ const getListeningHistoryWithMetadata = async (
       AND s.status = 'approved'
       AND s.release_date IS NOT NULL
       AND s.release_date <= NOW()
-    GROUP BY lh.song_id, s.artist_id
+    GROUP BY lh.song_id, s.artist_id, s.album_id
     ORDER BY play_count DESC
     LIMIT ?;
   `,
@@ -100,6 +101,7 @@ const getListeningHistoryWithMetadata = async (
 const getTopPreferences = (historyRows) => {
   const artistScores = new Map();
   const genreScores = new Map();
+  const albumScores = new Map();
 
   historyRows.forEach((row) => {
     const weight = Number(row.play_count) || 1;
@@ -120,6 +122,13 @@ const getTopPreferences = (historyRows) => {
           genreScores.set(genre, (genreScores.get(genre) || 0) + weight);
         });
     }
+
+    if (row.album_id) {
+      albumScores.set(
+        row.album_id,
+        (albumScores.get(row.album_id) || 0) + weight
+      );
+    }
   });
 
   const sortScores = (scores) =>
@@ -128,25 +137,51 @@ const getTopPreferences = (historyRows) => {
   return {
     artists: sortScores(artistScores).slice(0, 5),
     genres: sortScores(genreScores).slice(0, 5),
+    albums: sortScores(albumScores).slice(0, 5),
   };
 };
 
-const querySongsByPreference = async (artists, genres, excludeIds, limit) => {
-  if (!artists.length && !genres.length) {
+const querySongsByPreference = async (
+  artists,
+  genres,
+  albums,
+  excludeIds,
+  limit
+) => {
+  if (!artists.length && !genres.length && !albums.length) {
     return [];
   }
 
-  const params = [];
+  const scoreParams = [];
+  const whereParams = [];
   const preferenceConditions = [];
+  const scoreParts = [];
 
   if (artists.length) {
     preferenceConditions.push(`s.artist_id IN (${buildPlaceholders(artists)})`);
-    params.push(...artists);
+    scoreParts.push(
+      `MAX(CASE WHEN s.artist_id IN (${buildPlaceholders(artists)}) THEN 1 ELSE 0 END) * 2`
+    );
+    scoreParams.push(...artists);
+    whereParams.push(...artists);
   }
 
   if (genres.length) {
     preferenceConditions.push(`g.name IN (${buildPlaceholders(genres)})`);
-    params.push(...genres);
+    scoreParts.push(
+      `MAX(CASE WHEN g.name IN (${buildPlaceholders(genres)}) THEN 1 ELSE 0 END)`
+    );
+    scoreParams.push(...genres);
+    whereParams.push(...genres);
+  }
+
+  if (albums.length) {
+    preferenceConditions.push(`s.album_id IN (${buildPlaceholders(albums)})`);
+    scoreParts.push(
+      `MAX(CASE WHEN s.album_id IN (${buildPlaceholders(albums)}) THEN 1 ELSE 0 END)`
+    );
+    scoreParams.push(...albums);
+    whereParams.push(...albums);
   }
 
   const filters = [];
@@ -156,18 +191,22 @@ const querySongsByPreference = async (artists, genres, excludeIds, limit) => {
 
   if (excludeIds.length) {
     filters.push(`s.id NOT IN (${buildPlaceholders(excludeIds)})`);
-    params.push(...excludeIds);
+    whereParams.push(...excludeIds);
   }
 
   if (!filters.length) {
     return [];
   }
 
-  params.push(limit);
+  const params = [...scoreParams, ...whereParams, limit];
+
+  const preferenceScore =
+    scoreParts.length > 0 ? scoreParts.join(" + ") : "0";
 
   const [rows] = await db.query(
     `
-    SELECT s.id
+    SELECT s.id,
+      ${preferenceScore} AS preference_score
     FROM songs s
     LEFT JOIN song_genres sg ON sg.song_id = s.id
     LEFT JOIN genres g ON g.id = sg.genre_id
@@ -177,7 +216,7 @@ const querySongsByPreference = async (artists, genres, excludeIds, limit) => {
       AND s.release_date IS NOT NULL
       AND s.release_date <= NOW()
     GROUP BY s.id
-    ORDER BY s.play_count DESC
+    ORDER BY preference_score DESC, s.play_count DESC
     LIMIT ?;
   `,
     params
@@ -233,10 +272,11 @@ const buildFallbackRecommendations = async (
     return getPopularSongs(limit, exclusions);
   }
 
-  const { artists, genres } = getTopPreferences(history);
+  const { artists, genres, albums } = getTopPreferences(history);
   const preferenceMatches = await querySongsByPreference(
     artists,
     genres,
+    albums,
     exclusions,
     limit
   );

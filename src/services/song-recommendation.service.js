@@ -15,7 +15,7 @@ const FINAL_RESULTS = 15;
 
 // weight
 const W_AUDIO = 0.5;
-const W_META = 0.5;
+const W_META = 0.45;
 const W_ARTIST_BONUS = 0.45;
 const W_ALBUM_BONUS = 0.10;
 
