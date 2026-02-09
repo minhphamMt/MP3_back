@@ -24,6 +24,7 @@ import {
   getSystemOverview,
   getWeeklyTopSongs,
 } from "../services/admin.service.js";
+import { uploadMediaFile } from "../services/storage.service.js";
 
 const parseGenreQuery = (query) => query.genre || query.genres || [];
 
@@ -340,7 +341,31 @@ export const getSongRequest = async (req, res, next) => {
 
 export const updateSongRequest = async (req, res, next) => {
   try {
-    const song = await updateSong(req.params.id, req.body);
+    const payload = { ...req.body };
+    const audioFile = req.files?.audio?.[0];
+    const coverFile = req.files?.cover?.[0];
+
+    if (audioFile) {
+      const audioUpload = await uploadMediaFile({
+        folder: "uploads/music",
+        file: audioFile,
+        prefix: "song-audio",
+        ownerId: req.user?.id,
+      });
+      payload.audio_path = audioUpload.publicUrl;
+    }
+
+    if (coverFile) {
+      const coverUpload = await uploadMediaFile({
+        folder: "uploads/songs",
+        file: coverFile,
+        prefix: "song-cover",
+        ownerId: req.user?.id,
+      });
+      payload.cover_url = coverUpload.publicUrl;
+    }
+
+    const song = await updateSong(req.params.id, payload);
     return successResponse(res, song);
   } catch (error) {
     return next(error);

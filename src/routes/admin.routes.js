@@ -3,6 +3,7 @@ import * as adminController from "../controllers/admin.controller.js";
 import authMiddleware from "../middlewares/auth.middleware.js";
 import rbacMiddleware from "../middlewares/rbac.middleware.js";
 import ROLES from "../constants/roles.js";
+import { uploadSongMedia } from "../middlewares/upload.middleware.js";
 
 const router = Router();
 
@@ -20,7 +21,7 @@ router.patch("/songs/:id/approve", adminController.approveSongRequest);
 router.patch("/songs/:id/block", adminController.blockSongRequest);
 router.get("/songs", adminController.listSongsRequest);
 router.get("/songs/:id", adminController.getSongRequest);
-router.put("/songs/:id", adminController.updateSongRequest);
+router.put("/songs/:id", uploadSongMedia, adminController.updateSongRequest);
 router.patch("/users/:id/active", adminController.toggleUserActive);
 router.patch("/users/:id/role", adminController.updateUserRole);
 router.patch("/users/:id", adminController.updateUserRequest);
