@@ -15,7 +15,10 @@ export const register = async (req, res, next) => {
 
 export const registerArtist = async (req, res, next) => {
   try {
-    const result = await registerUser(req.body);
+    const result = await registerUser({
+      ...req.body,
+      artist_register_intent: true,
+    });
     return res.status(201).json(result);
   } catch (error) {
     return next(error);

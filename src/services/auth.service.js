@@ -121,7 +121,13 @@ const generateTokens = (user) => {
   return { accessToken, refreshToken };
 };
 
-export const registerUser = async ({ display_name, name, email, password }) => {
+export const registerUser = async ({
+  display_name,
+  name,
+  email,
+  password,
+  artist_register_intent = false,
+}) => {
   const displayName = display_name ?? name;
 
   if (!displayName) {
@@ -137,8 +143,15 @@ export const registerUser = async ({ display_name, name, email, password }) => {
 
   const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
   const [result] = await db.query(
-    "INSERT INTO users (display_name, email, password_hash, role, is_active) VALUES (?, ?, ?, ?, ?)",
-    [displayName, email, hashedPassword, ROLES.USER, 1]
+    "INSERT INTO users (display_name, email, password_hash, role, is_active, artist_register_intent) VALUES (?, ?, ?, ?, ?, ?)",
+    [
+      displayName,
+      email,
+      hashedPassword,
+      ROLES.USER,
+      1,
+      artist_register_intent,
+    ]
   );
 
   const user = {
@@ -147,6 +160,7 @@ export const registerUser = async ({ display_name, name, email, password }) => {
     email,
     role: ROLES.USER,
     is_active: 1,
+    artist_register_intent,
   };
 
   const tokens = generateTokens(user);
