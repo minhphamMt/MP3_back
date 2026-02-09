@@ -1,5 +1,9 @@
 import db from "../config/db.js";
-import { createArtist } from "./artist.service.js";
+import {
+  createArtist,
+  getArtistByUserIdWithDeleted,
+  restoreArtist,
+} from "./artist.service.js";
 import { setUserRole } from "./user.service.js";
 import { ROLES } from "../constants/roles.js";
 
@@ -152,12 +156,21 @@ export const reviewArtistRequest = async (
   }
 
   if (status === "approved") {
-    await createArtist({
-      name: request.artist_name,
-      bio: request.bio,
-      avatar_url: request.avatar_url,
-      user_id: request.user_id,
-    });
+    const existingArtist = await getArtistByUserIdWithDeleted(request.user_id);
+
+    if (existingArtist?.is_deleted) {
+      await restoreArtist(existingArtist.id, {
+        requesterRole: ROLES.ADMIN,
+        requesterId: reviewerId,
+      });
+    } else if (!existingArtist) {
+      await createArtist({
+        name: request.artist_name,
+        bio: request.bio,
+        avatar_url: request.avatar_url,
+        user_id: request.user_id,
+      });
+    }
     await setUserRole(request.user_id, ROLES.ARTIST);
   }
 
