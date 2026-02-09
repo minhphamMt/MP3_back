@@ -11,8 +11,14 @@ import {
 const router = Router();
 
 router.post("/register", validate(registerSchema), authController.register);
+router.post(
+  "/artist/register",
+  validate(registerSchema),
+  authController.registerArtist
+);
 router.post("/firebase", validate(firebaseLoginSchema), authController.firebaseLogin);
 router.post("/login", validate(loginSchema), authController.login);
+router.post("/artist/login", validate(loginSchema), authController.loginArtist);
 router.post("/refresh", validate(refreshSchema), authController.refresh);
 
 export default router;

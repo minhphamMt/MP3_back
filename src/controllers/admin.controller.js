@@ -25,6 +25,10 @@ import {
   getWeeklyTopSongs,
 } from "../services/admin.service.js";
 import { uploadMediaFile } from "../services/storage.service.js";
+import {
+  listArtistRequests,
+  reviewArtistRequest,
+} from "../services/artist-request.service.js";
 
 const parseGenreQuery = (query) => query.genre || query.genres || [];
 
@@ -106,6 +110,104 @@ export const blockSongRequest = async (req, res, next) => {
     return res.json({
       message: "Song blocked successfully",
       song,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const listArtistRequestsRequest = async (req, res, next) => {
+  try {
+    const { page, limit, offset } = getPaginationParams(req.query);
+    const { status } = req.query;
+    const keyword = req.query.q || req.query.keyword;
+
+    const result = await listArtistRequests({
+      page,
+      limit,
+      offset,
+      status,
+      keyword,
+    });
+
+    return successResponse(res, result.items, result.meta);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const reviewArtistRequestHandler = async (req, res, next) => {
+  try {
+    const { status, reject_reason, rejectReason } = req.body;
+
+    if (!status) {
+      return next(createHttpError(400, "status is required"));
+    }
+
+    const request = await reviewArtistRequest(req.params.id, {
+      status,
+      rejectReason: reject_reason ?? rejectReason,
+      reviewerId: req.user.id,
+    });
+
+    logger.info("Artist request reviewed", {
+      requestId: req.params.id,
+      status,
+      reviewerId: req.user.id,
+    });
+
+    return res.json({
+      message: "Artist request reviewed successfully",
+      request,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const approveArtistRequest = async (req, res, next) => {
+  try {
+    const request = await reviewArtistRequest(req.params.id, {
+      status: "approved",
+      reviewerId: req.user.id,
+    });
+
+    logger.info("Artist request approved", {
+      requestId: req.params.id,
+      reviewerId: req.user.id,
+    });
+
+    return res.json({
+      message: "Artist request approved successfully",
+      request,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const rejectArtistRequest = async (req, res, next) => {
+  try {
+    const rejectReason = req.body.reject_reason ?? req.body.rejectReason;
+
+    if (!rejectReason) {
+      return next(createHttpError(400, "reject_reason is required"));
+    }
+
+    const request = await reviewArtistRequest(req.params.id, {
+      status: "rejected",
+      reviewerId: req.user.id,
+      rejectReason,
+    });
+
+    logger.info("Artist request rejected", {
+      requestId: req.params.id,
+      reviewerId: req.user.id,
+    });
+
+    return res.json({
+      message: "Artist request rejected successfully",
+      request,
     });
   } catch (error) {
     return next(error);
@@ -389,4 +491,8 @@ export default {
   listSongsRequest,
   getSongRequest,
   updateSongRequest,
+  listArtistRequestsRequest,
+  reviewArtistRequestHandler,
+  approveArtistRequest,
+  rejectArtistRequest,
 };

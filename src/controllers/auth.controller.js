@@ -13,6 +13,15 @@ export const register = async (req, res, next) => {
   }
 };
 
+export const registerArtist = async (req, res, next) => {
+  try {
+    const result = await registerUser(req.body);
+    return res.status(201).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 export const firebaseLogin = async (req, res, next) => {
   try {
     const result = await firebaseLoginUser(req.body);
@@ -23,6 +32,15 @@ export const firebaseLogin = async (req, res, next) => {
 };
 
 export const login = async (req, res, next) => {
+  try {
+    const result = await loginUser(req.body);
+    return res.json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const loginArtist = async (req, res, next) => {
   try {
     const result = await loginUser(req.body);
     return res.json(result);
