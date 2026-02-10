@@ -23,7 +23,8 @@ const buildTransportConfig = () => {
 };
 
 export const sendVerificationEmail = async ({ email, displayName, verificationUrl }) => {
-  const transportMode = process.env.EMAIL_TRANSPORT || "log";
+  const transportMode =
+    process.env.EMAIL_TRANSPORT || (process.env.SMTP_HOST ? "smtp" : "log");
 
   if (transportMode !== "smtp") {
     logger.info("Email verification link generated", {

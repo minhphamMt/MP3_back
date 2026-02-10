@@ -12,7 +12,8 @@ const env = {
   dbName: process.env.DB_NAME,
   embeddingServiceUrl: process.env.EMBEDDING_SERVICE_URL,
   frontendUrl: process.env.FRONTEND_URL,
-  emailTransport: process.env.EMAIL_TRANSPORT || "log",
+  emailTransport:
+  process.env.EMAIL_TRANSPORT || (process.env.SMTP_HOST ? "smtp" : "log"),
   smtpHost: process.env.SMTP_HOST,
   smtpPort: process.env.SMTP_PORT,
   smtpUser: process.env.SMTP_USER,
