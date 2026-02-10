@@ -8,7 +8,13 @@ export const registerSchema = {
 
 export const verifyEmailSchema = {
   body: {
-    token: { type: "string", required: true, minLength: 20 },
+    email: { type: "string", required: true, format: "email" },
+    verification_code: {
+      type: "string",
+      required: true,
+      minLength: 6,
+      maxLength: 6,
+    },
   },
 };
 

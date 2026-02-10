@@ -37,7 +37,7 @@ describe("email.service transport selection", () => {
     process.env = originalEnv;
   });
 
-  it("logs verification url when smtp is not configured", async () => {
+  it("logs verification code when smtp is not configured", async () => {
     delete process.env.EMAIL_TRANSPORT;
     delete process.env.SMTP_HOST;
 
@@ -46,11 +46,11 @@ describe("email.service transport selection", () => {
     await sendVerificationEmail({
       email: "tester@example.com",
       displayName: "Tester",
-      verificationUrl: "http://localhost:5173/verify-email?token=abc",
+      verificationCode: "123456",
     });
 
     expect(mockLoggerInfo).toHaveBeenCalledWith(
-      "Email verification link generated",
+      "Email verification code generated",
       expect.objectContaining({
         email: "tester@example.com",
         transportMode: "log",
@@ -74,7 +74,7 @@ describe("email.service transport selection", () => {
     await sendVerificationEmail({
       email: "tester@example.com",
       displayName: "Tester",
-      verificationUrl: "http://localhost:5173/verify-email?token=abc",
+      verificationCode: "123456",
     });
 
     expect(mockSendMail).toHaveBeenCalledTimes(1);

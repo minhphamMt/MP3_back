@@ -120,16 +120,8 @@ const generateTokens = (user) => {
 const hashToken = (token) =>
   crypto.createHash("sha256").update(token).digest("hex");
 
-const createVerificationToken = () => crypto.randomBytes(32).toString("hex");
-
-const buildVerificationUrl = (token) => {
-  const backendBaseUrl =
-    process.env.BACKEND_URL ||
-    process.env.API_BASE_URL ||
-    `http://localhost:${process.env.PORT || 3000}`;
-
-  return `${backendBaseUrl.replace(/\/$/, "")}/api/auth/verify-email/confirm?token=${token}`;
-};
+const createVerificationCode = () =>
+  crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
 
 const upsertEmailVerification = async ({
   email,
@@ -184,8 +176,8 @@ export const registerUser = async ({
   }
 
   const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-  const verificationToken = createVerificationToken();
-  const tokenHash = hashToken(verificationToken);
+  const verificationCode = createVerificationCode();
+  const tokenHash = hashToken(verificationCode);
   const expiresAt = new Date(
     Date.now() + EMAIL_VERIFY_EXPIRES_MINUTES * 60 * 1000
   );
@@ -202,7 +194,7 @@ export const registerUser = async ({
   await sendVerificationEmail({
     email,
     displayName,
-    verificationUrl: buildVerificationUrl(verificationToken),
+    verificationCode,
   });
 
   return {
@@ -212,14 +204,24 @@ export const registerUser = async ({
   };
 };
 
-export const verifyEmailRegistration = async ({ token }) => {
-  const tokenHash = hashToken(token);
+export const verifyEmailRegistration = async ({ email, verification_code }) => {
+  if (!email || !verification_code) {
+    throw createError(400, "Email và mã xác thực là bắt buộc");
+  }
+
+  const code = String(verification_code).trim();
+  if (!/^\d{6}$/.test(code)) {
+    throw createError(400, "Mã xác thực không hợp lệ");
+  }
+
+  const tokenHash = hashToken(code);
   const [rows] = await db.query(
     `SELECT * FROM email_verifications
-      WHERE token_hash = ?
+      WHERE email = ?
+        AND token_hash = ?
         AND used_at IS NULL
       LIMIT 1`,
-    [tokenHash]
+    [email, tokenHash]
   );
 
   const verification = rows[0];
@@ -242,7 +244,7 @@ export const verifyEmailRegistration = async ({ token }) => {
 
     if (existingUsers.length > 0) {
       await connection.query(
-        "UPDATE email_verifications SET used_at = NOW() WHERE id = ?",
+        "DELETE FROM email_verifications WHERE id = ?",
         [verification.id]
       );
       await connection.commit();
@@ -262,7 +264,7 @@ export const verifyEmailRegistration = async ({ token }) => {
     );
 
     await connection.query(
-      "UPDATE email_verifications SET used_at = NOW() WHERE id = ?",
+      "DELETE FROM email_verifications WHERE id = ?",
       [verification.id]
     );
 
@@ -320,8 +322,8 @@ export const resendVerificationEmail = async ({ email }) => {
     };
   }
 
-  const token = createVerificationToken();
-  const tokenHash = hashToken(token);
+  const verificationCode = createVerificationCode();
+  const tokenHash = hashToken(verificationCode);
   const expiresAt = new Date(
     Date.now() + EMAIL_VERIFY_EXPIRES_MINUTES * 60 * 1000
   );
@@ -334,7 +336,7 @@ export const resendVerificationEmail = async ({ email }) => {
   await sendVerificationEmail({
     email,
     displayName: verification.display_name,
-    verificationUrl: buildVerificationUrl(token),
+    verificationCode,
   });
 
   return {

@@ -73,7 +73,7 @@ describe("auth.service email verification flow", () => {
     process.env = originalEnv;
   });
 
-  it("registerUser stores pending verification and sends verification email", async () => {
+  it("registerUser stores pending verification and sends verification code email", async () => {
     mockDb.query
       .mockResolvedValueOnce([[]])
       .mockResolvedValueOnce([{ affectedRows: 1 }]);
@@ -100,14 +100,12 @@ describe("auth.service email verification flow", () => {
       email: "tester@example.com",
       displayName: "Tester",
     });
-    expect(mockSendVerificationEmail.mock.calls[0][0].verificationUrl).toContain(
-      "http://localhost:3000/api/auth/verify-email/confirm?token="
+    expect(mockSendVerificationEmail.mock.calls[0][0].verificationCode).toMatch(
+      /^\d{6}$/
     );
   });
 
-  it("verifyEmailRegistration creates user and marks verification as used", async () => {
-    const token = "abc123token";
-
+  it("verifyEmailRegistration creates user and deletes temporary verification", async () => {
     mockDb.query.mockResolvedValueOnce([
       [
         {
@@ -128,12 +126,15 @@ describe("auth.service email verification flow", () => {
 
     const { verifyEmailRegistration } = await loadAuthService();
 
-    const result = await verifyEmailRegistration({ token });
+    const result = await verifyEmailRegistration({
+      email: "tester@example.com",
+      verification_code: "123456",
+    });
 
     expect(mockConnection.beginTransaction).toHaveBeenCalled();
     expect(mockConnection.query.mock.calls[1][0]).toContain("INSERT INTO users");
     expect(mockConnection.query.mock.calls[2][0]).toContain(
-      "UPDATE email_verifications SET used_at = NOW()"
+      "DELETE FROM email_verifications"
     );
     expect(mockConnection.commit).toHaveBeenCalled();
     expect(result).toMatchObject({

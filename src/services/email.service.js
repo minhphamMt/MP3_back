@@ -22,15 +22,19 @@ const buildTransportConfig = () => {
   };
 };
 
-export const sendVerificationEmail = async ({ email, displayName, verificationUrl }) => {
+export const sendVerificationEmail = async ({
+  email,
+  displayName,
+  verificationCode,
+}) => {
   const transportMode =
     process.env.EMAIL_TRANSPORT || (process.env.SMTP_HOST ? "smtp" : "log");
 
   if (transportMode !== "smtp") {
-    logger.info("Email verification link generated", {
+    logger.info("Email verification code generated", {
       email,
       displayName,
-      verificationUrl,
+      verificationCode,
       transportMode,
     });
     return;
@@ -60,8 +64,8 @@ export const sendVerificationEmail = async ({ email, displayName, verificationUr
     from,
     to: email,
     subject: "Xác nhận email đăng ký tài khoản",
-    text: `Xin chào ${displayName},\n\nVui lòng xác nhận email để hoàn tất đăng ký bằng cách mở liên kết sau: ${verificationUrl}\n\nNếu không phải bạn, hãy bỏ qua email này.`,
-    html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827"><p>Xin chào <strong>${displayName}</strong>,</p><p>Vui lòng xác nhận email để hoàn tất đăng ký tài khoản.</p><p><a href="${verificationUrl}" style="display:inline-block;background:#2563eb;color:#ffffff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">Xác nhận tài khoản</a></p><p style="font-size:13px;color:#6b7280">Nếu nút không hoạt động, vui lòng bấm vào liên kết này: <a href="${verificationUrl}">Xác nhận email</a>.</p><p>Nếu không phải bạn, hãy bỏ qua email này.</p></div>`,
+    text: `Xin chào ${displayName},\n\nMã xác nhận đăng ký tài khoản của bạn là: ${verificationCode}\n\nMã có hiệu lực trong thời gian giới hạn. Nếu không phải bạn, hãy bỏ qua email này.`,
+    html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827"><p>Xin chào <strong>${displayName}</strong>,</p><p>Mã xác nhận đăng ký tài khoản của bạn là:</p><p style="font-size:28px;font-weight:700;letter-spacing:6px;color:#2563eb;margin:8px 0 12px;">${verificationCode}</p><p style="font-size:13px;color:#6b7280">Mã có hiệu lực trong thời gian giới hạn. Nếu không phải bạn, hãy bỏ qua email này.</p></div>`,
   });
 };
 

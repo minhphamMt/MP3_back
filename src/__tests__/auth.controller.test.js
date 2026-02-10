@@ -24,33 +24,18 @@ const loadApp = async () => {
 };
 
 describe("auth verify email from link", () => {
-  const originalEnv = process.env;
-
   beforeEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
-    process.env = {
-      ...originalEnv,
-      FRONTEND_URL: "http://localhost:5173",
-    };
   });
 
-  afterAll(() => {
-    process.env = originalEnv;
-  });
-
-  it("redirects to frontend login after successful verification", async () => {
+  it("returns deprecation message for link verification endpoint", async () => {
     const app = await loadApp();
-    mockVerifyEmailRegistration.mockResolvedValue({ message: "ok" });
 
-    const response = await request(app)
-      .get("/api/auth/verify-email/confirm")
-      .query({ token: "valid-token" });
+    const response = await request(app).get("/api/auth/verify-email/confirm");
 
-    expect(response.status).toBe(302);
-    expect(response.headers.location).toBe("http://localhost:5173/login");
-    expect(mockVerifyEmailRegistration).toHaveBeenCalledWith({
-      token: "valid-token",
-    });
+    expect(response.status).toBe(410);
+    expect(response.body.message).toContain("đã ngừng hỗ trợ");
+    expect(mockVerifyEmailRegistration).not.toHaveBeenCalled();
   });
 });
