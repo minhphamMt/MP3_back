@@ -7,6 +7,16 @@ export const createArtistRequestSchema = {
   },
 };
 
+export const updateArtistRequestSchema = {
+  body: {
+    artist_name: { type: "string", required: false, minLength: 2 },
+    bio: { type: "string", required: false },
+    avatar_url: { type: "string", required: false },
+    proof_link: { type: "string", required: false },
+  },
+};
+
 export default {
   createArtistRequestSchema,
+  updateArtistRequestSchema,
 };

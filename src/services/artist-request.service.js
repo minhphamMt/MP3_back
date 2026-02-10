@@ -195,10 +195,80 @@ export const reviewArtistRequest = async (
   return getArtistRequestById(requestId);
 };
 
+export const updateMyArtistRequest = async ({
+  userId,
+  artistName,
+  bio,
+  avatarUrl,
+  proofLink,
+}) => {
+  if (!userId) {
+    throw createError(400, "userId is required");
+  }
+
+  const fieldsToUpdate = [];
+  const params = [];
+
+  if (artistName !== undefined) {
+    fieldsToUpdate.push("artist_name = ?");
+    params.push(artistName);
+  }
+
+  if (bio !== undefined) {
+    fieldsToUpdate.push("bio = ?");
+    params.push(bio || null);
+  }
+
+  if (avatarUrl !== undefined) {
+    fieldsToUpdate.push("avatar_url = ?");
+    params.push(avatarUrl || null);
+  }
+
+  if (proofLink !== undefined) {
+    fieldsToUpdate.push("proof_link = ?");
+    params.push(proofLink || null);
+  }
+
+  if (fieldsToUpdate.length === 0) {
+    throw createError(400, "At least one field is required to update");
+  }
+
+  const request = await getArtistRequestByUserId(userId);
+
+  if (!request) {
+    throw createError(404, "Artist request not found");
+  }
+
+  if (request.status === "approved") {
+    throw createError(409, "Artist request already approved");
+  }
+
+  if (request.status === "rejected") {
+    fieldsToUpdate.push(
+      "status = 'pending'",
+      "reject_reason = NULL",
+      "reviewed_by = NULL",
+      "reviewed_at = NULL"
+    );
+  }
+
+  await db.query(
+    `
+    UPDATE artist_requests
+    SET ${fieldsToUpdate.join(", ")}
+    WHERE user_id = ?
+  `,
+    [...params, userId]
+  );
+
+  return getArtistRequestByUserId(userId);
+};
+
 export default {
   getArtistRequestById,
   getArtistRequestByUserId,
   listArtistRequests,
   createArtistRequest,
   reviewArtistRequest,
+  updateMyArtistRequest,
 };
