@@ -23,6 +23,7 @@ router.post(
   validate(verifyEmailSchema),
   authController.verifyEmail
 );
+router.get("/verify-email/confirm", authController.verifyEmailFromLink);
 router.post(
   "/resend-verification",
   validate(resendVerificationSchema),

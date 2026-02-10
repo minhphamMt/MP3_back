@@ -60,8 +60,8 @@ export const sendVerificationEmail = async ({ email, displayName, verificationUr
     from,
     to: email,
     subject: "Xác nhận email đăng ký tài khoản",
-    text: `Xin chào ${displayName},\n\nVui lòng xác nhận email để hoàn tất đăng ký: ${verificationUrl}\n\nNếu không phải bạn, hãy bỏ qua email này.`,
-    html: `<p>Xin chào <strong>${displayName}</strong>,</p><p>Vui lòng xác nhận email để hoàn tất đăng ký tài khoản:</p><p><a href="${verificationUrl}">${verificationUrl}</a></p><p>Nếu không phải bạn, hãy bỏ qua email này.</p>`,
+    text: `Xin chào ${displayName},\n\nVui lòng xác nhận email để hoàn tất đăng ký bằng cách mở liên kết sau: ${verificationUrl}\n\nNếu không phải bạn, hãy bỏ qua email này.`,
+    html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827"><p>Xin chào <strong>${displayName}</strong>,</p><p>Vui lòng xác nhận email để hoàn tất đăng ký tài khoản.</p><p><a href="${verificationUrl}" style="display:inline-block;background:#2563eb;color:#ffffff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">Xác nhận tài khoản</a></p><p style="font-size:13px;color:#6b7280">Nếu nút không hoạt động, vui lòng bấm vào liên kết này: <a href="${verificationUrl}">Xác nhận email</a>.</p><p>Nếu không phải bạn, hãy bỏ qua email này.</p></div>`,
   });
 };
 

@@ -123,8 +123,12 @@ const hashToken = (token) =>
 const createVerificationToken = () => crypto.randomBytes(32).toString("hex");
 
 const buildVerificationUrl = (token) => {
-  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-  return `${frontendUrl.replace(/\/$/, "")}/verify-email?token=${token}`;
+  const backendBaseUrl =
+    process.env.BACKEND_URL ||
+    process.env.API_BASE_URL ||
+    `http://localhost:${process.env.PORT || 3000}`;
+
+  return `${backendBaseUrl.replace(/\/$/, "")}/api/auth/verify-email/confirm?token=${token}`;
 };
 
 const upsertEmailVerification = async ({

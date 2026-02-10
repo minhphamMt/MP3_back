@@ -14,6 +14,9 @@ const env = {
   frontendUrl: process.env.FRONTEND_URL,
   emailTransport:
   process.env.EMAIL_TRANSPORT || (process.env.SMTP_HOST ? "smtp" : "log"),
+  backendUrl: process.env.BACKEND_URL || process.env.API_BASE_URL,
+  emailTransport:
+  process.env.EMAIL_TRANSPORT || (process.env.SMTP_HOST ? "smtp" : "log"),
   smtpHost: process.env.SMTP_HOST,
   smtpPort: process.env.SMTP_PORT,
   smtpUser: process.env.SMTP_USER,

@@ -59,6 +59,7 @@ describe("auth.service email verification flow", () => {
       ...originalEnv,
       JWT_SECRET: "test-secret",
       FRONTEND_URL: "http://localhost:5173",
+      BACKEND_URL: "http://localhost:3000",
       EMAIL_VERIFY_EXPIRES_MINUTES: "30",
     };
     mockDb.getConnection.mockReturnValue(mockConnection);
@@ -100,7 +101,7 @@ describe("auth.service email verification flow", () => {
       displayName: "Tester",
     });
     expect(mockSendVerificationEmail.mock.calls[0][0].verificationUrl).toContain(
-      "http://localhost:5173/verify-email?token="
+      "http://localhost:3000/api/auth/verify-email/confirm?token="
     );
   });
 
