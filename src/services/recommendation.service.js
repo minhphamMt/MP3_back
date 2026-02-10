@@ -4,6 +4,8 @@ import env from "../config/env.js";
 const DEFAULT_LIMIT = 20;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_HISTORY_ROWS = 100;
+const COLD_START_CANDIDATE_MULTIPLIER = 3;
+const COLD_START_MAX_PER_ARTIST = 2;
 
 const recommendationCache = new Map();
 
@@ -65,6 +67,154 @@ const setCachedRecommendations = (userId, recommendations) => {
     data: recommendations,
     expiresAt: Date.now() + CACHE_TTL_MS,
   });
+};
+
+const getColdStartPopularSongs = async (limit) => {
+  const [rows] = await db.query(
+    `
+    SELECT
+      s.id,
+      s.title,
+      s.artist_id,
+      ar.name AS artist_name,
+      s.cover_url,
+      s.play_count,
+      s.release_date,
+      'popular' AS source
+    FROM songs s
+    LEFT JOIN artists ar ON ar.id = s.artist_id
+    WHERE s.is_deleted = 0
+      AND s.status = 'approved'
+      AND s.release_date IS NOT NULL
+      AND s.release_date <= NOW()
+    ORDER BY s.play_count DESC, s.release_date DESC
+    LIMIT ?;
+  `,
+    [limit]
+  );
+
+  return rows;
+};
+
+const getColdStartFreshSongs = async (limit) => {
+  const [rows] = await db.query(
+    `
+    SELECT
+      s.id,
+      s.title,
+      s.artist_id,
+      ar.name AS artist_name,
+      s.cover_url,
+      s.play_count,
+      s.release_date,
+      'fresh' AS source
+    FROM songs s
+    LEFT JOIN artists ar ON ar.id = s.artist_id
+    WHERE s.is_deleted = 0
+      AND s.status = 'approved'
+      AND s.release_date IS NOT NULL
+      AND s.release_date <= NOW()
+    ORDER BY s.release_date DESC, s.play_count DESC
+    LIMIT ?;
+  `,
+    [limit]
+  );
+
+  return rows;
+};
+
+const getColdStartRandomSongs = async (limit) => {
+  const [rows] = await db.query(
+    `
+    SELECT
+      s.id,
+      s.title,
+      s.artist_id,
+      ar.name AS artist_name,
+      s.cover_url,
+      s.play_count,
+      s.release_date,
+      'explore' AS source
+    FROM songs s
+    LEFT JOIN artists ar ON ar.id = s.artist_id
+    WHERE s.is_deleted = 0
+      AND s.status = 'approved'
+      AND s.release_date IS NOT NULL
+      AND s.release_date <= NOW()
+    ORDER BY RAND()
+    LIMIT ?;
+  `,
+    [limit]
+  );
+
+  return rows;
+};
+
+const scoreColdStartItem = (song) => {
+  const sourceScoreMap = {
+    popular: 0.65,
+    fresh: 0.5,
+    explore: 0.35,
+  };
+
+  const popularityScore = Math.min((Number(song.play_count) || 0) / 1_000_000, 1);
+  const sourceScore = sourceScoreMap[song.source] || 0;
+
+  return popularityScore * 0.6 + sourceScore * 0.4;
+};
+
+const mapColdStartResult = (song) => ({
+  songId: song.id,
+  title: song.title,
+  artistId: song.artist_id,
+  artistName: song.artist_name,
+  coverUrl: song.cover_url,
+  playCount: Number(song.play_count) || 0,
+  releaseDate: song.release_date,
+  reason: song.source,
+});
+
+export const getColdStartRecommendations = async (limit = DEFAULT_LIMIT) => {
+  const normalizedLimit = normalizeLimit(limit);
+  const candidateLimit = normalizedLimit * COLD_START_CANDIDATE_MULTIPLIER;
+
+  const [popularSongs, freshSongs, randomSongs] = await Promise.all([
+    getColdStartPopularSongs(candidateLimit),
+    getColdStartFreshSongs(candidateLimit),
+    getColdStartRandomSongs(candidateLimit),
+  ]);
+
+  const allCandidates = [...popularSongs, ...freshSongs, ...randomSongs]
+    .map((song) => ({
+      ...song,
+      coldStartScore: scoreColdStartItem(song),
+    }))
+    .sort((a, b) => b.coldStartScore - a.coldStartScore);
+
+  const seenSongIds = new Set();
+  const artistCounter = new Map();
+  const selected = [];
+
+  for (const song of allCandidates) {
+    if (seenSongIds.has(song.id)) {
+      continue;
+    }
+
+    const currentArtistCount = artistCounter.get(song.artist_id) || 0;
+    if (currentArtistCount >= COLD_START_MAX_PER_ARTIST) {
+      continue;
+    }
+
+    seenSongIds.add(song.id);
+    artistCounter.set(song.artist_id, currentArtistCount + 1);
+    selected.push(mapColdStartResult(song));
+
+    if (selected.length >= normalizedLimit) {
+      break;
+    }
+  }
+
+  return selected;
 };
 
 const getListeningHistoryWithMetadata = async (
@@ -376,4 +526,5 @@ export const getRecommendations = async (userId, limit = DEFAULT_LIMIT) => {
 
 export default {
   getRecommendations,
+  getColdStartRecommendations,
 };

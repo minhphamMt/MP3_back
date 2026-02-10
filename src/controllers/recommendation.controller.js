@@ -1,4 +1,7 @@
-import { getRecommendations } from "../services/recommendation.service.js";
+import {
+  getColdStartRecommendations,
+  getRecommendations,
+} from "../services/recommendation.service.js";
 import { errorResponse, successResponse } from "../utils/response.js";
 
 export const getRecommendationsHandler = async (req, res, next) => {
@@ -18,6 +21,18 @@ export const getRecommendationsHandler = async (req, res, next) => {
   }
 };
 
+export const getColdStartRecommendationsHandler = async (req, res, next) => {
+  try {
+    const limit = Number(req.query.limit) || undefined;
+    const recommendations = await getColdStartRecommendations(limit);
+
+    return successResponse(res, recommendations);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 export default {
   getRecommendationsHandler,
+  getColdStartRecommendationsHandler,
 };
