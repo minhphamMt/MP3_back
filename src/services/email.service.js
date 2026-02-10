@@ -1,0 +1,69 @@
+import { logger } from "../utils/logger.js";
+
+const parsePort = (value, fallback) => {
+  const parsed = Number(value);
+  if (Number.isNaN(parsed)) return fallback;
+  return parsed;
+};
+
+const buildTransportConfig = () => {
+  const port = parsePort(process.env.SMTP_PORT, 587);
+  return {
+    host: process.env.SMTP_HOST,
+    port,
+    secure: port === 465,
+    auth:
+      process.env.SMTP_USER && process.env.SMTP_PASS
+        ? {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS,
+          }
+        : undefined,
+  };
+};
+
+export const sendVerificationEmail = async ({ email, displayName, verificationUrl }) => {
+  const transportMode = process.env.EMAIL_TRANSPORT || "log";
+
+  if (transportMode !== "smtp") {
+    logger.info("Email verification link generated", {
+      email,
+      displayName,
+      verificationUrl,
+      transportMode,
+    });
+    return;
+  }
+
+  let nodemailer;
+  try {
+    ({ default: nodemailer } = await import("nodemailer"));
+  } catch (error) {
+    const err = new Error(
+      "nodemailer is required for SMTP transport. Please install dependencies."
+    );
+    err.status = 500;
+    throw err;
+  }
+
+  if (!process.env.SMTP_HOST) {
+    const err = new Error("SMTP_HOST is required when EMAIL_TRANSPORT=smtp");
+    err.status = 500;
+    throw err;
+  }
+
+  const from = process.env.MAIL_FROM || "no-reply@example.com";
+  const transporter = nodemailer.createTransport(buildTransportConfig());
+
+  await transporter.sendMail({
+    from,
+    to: email,
+    subject: "Xác nhận email đăng ký tài khoản",
+    text: `Xin chào ${displayName},\n\nVui lòng xác nhận email để hoàn tất đăng ký: ${verificationUrl}\n\nNếu không phải bạn, hãy bỏ qua email này.`,
+    html: `<p>Xin chào <strong>${displayName}</strong>,</p><p>Vui lòng xác nhận email để hoàn tất đăng ký tài khoản:</p><p><a href="${verificationUrl}">${verificationUrl}</a></p><p>Nếu không phải bạn, hãy bỏ qua email này.</p>`,
+  });
+};
+
+export default {
+  sendVerificationEmail,
+};

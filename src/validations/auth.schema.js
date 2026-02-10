@@ -6,6 +6,18 @@ export const registerSchema = {
   },
 };
 
+export const verifyEmailSchema = {
+  body: {
+    token: { type: "string", required: true, minLength: 20 },
+  },
+};
+
+export const resendVerificationSchema = {
+  body: {
+    email: { type: "string", required: true, format: "email" },
+  },
+};
+
 export const loginSchema = {
   body: {
     email: { type: "string", required: true, format: "email" },
@@ -27,6 +39,8 @@ export const firebaseLoginSchema = {
 
 export default {
   registerSchema,
+  verifyEmailSchema,
+  resendVerificationSchema,
   loginSchema,
   refreshSchema,
   firebaseLoginSchema,

@@ -6,6 +6,8 @@ import {
   loginSchema,
   refreshSchema,
   registerSchema,
+  resendVerificationSchema,
+  verifyEmailSchema,
 } from "../validations/auth.schema.js";
 
 const router = Router();
@@ -15,6 +17,16 @@ router.post(
   "/artist/register",
   validate(registerSchema),
   authController.registerArtist
+);
+router.post(
+  "/verify-email",
+  validate(verifyEmailSchema),
+  authController.verifyEmail
+);
+router.post(
+  "/resend-verification",
+  validate(resendVerificationSchema),
+  authController.resendVerification
 );
 router.post("/firebase", validate(firebaseLoginSchema), authController.firebaseLogin);
 router.post("/login", validate(loginSchema), authController.login);

@@ -11,6 +11,13 @@ const env = {
   dbPassword: process.env.DB_PASSWORD,
   dbName: process.env.DB_NAME,
   embeddingServiceUrl: process.env.EMBEDDING_SERVICE_URL,
+  frontendUrl: process.env.FRONTEND_URL,
+  emailTransport: process.env.EMAIL_TRANSPORT || "log",
+  smtpHost: process.env.SMTP_HOST,
+  smtpPort: process.env.SMTP_PORT,
+  smtpUser: process.env.SMTP_USER,
+  mailFrom: process.env.MAIL_FROM,
+  emailVerifyExpiresMinutes: process.env.EMAIL_VERIFY_EXPIRES_MINUTES,
 };
 
 export default env;
