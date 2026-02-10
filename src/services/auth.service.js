@@ -30,39 +30,33 @@ export const firebaseLoginUser = async ({ idToken }) => {
     decoded.name || decoded.display_name || email.split("@")[0];
   const avatarUrl = decoded.picture || null;
 
-  // 2. Find user by firebase_uid OR email
-  const [rows] = await db.query(
-    "SELECT * FROM users WHERE firebase_uid = ? OR email = ? LIMIT 1",
-    [firebaseUid, email]
+  // 2. Check existing user by email first
+  const [emailRows] = await db.query(
+    "SELECT * FROM users WHERE email = ? LIMIT 1",
+    [email]
   );
 
-  let user = rows[0];
+  let user = emailRows[0];
 
   // 3. Existing but disabled
   if (user && !user.is_active) {
     throw createError(403, "Account is disabled");
   }
 
-  // 4. Existing local user → link Firebase
-  if (user && !user.firebase_uid) {
-    await db.query(
-      `UPDATE users
-       SET firebase_uid = ?,
-           auth_provider = 'firebase',
-           password_hash = NULL,
-           avatar_url = COALESCE(avatar_url, ?),
-           display_name = COALESCE(display_name, ?)
-       WHERE id = ?`,
-      [firebaseUid, avatarUrl, displayName, user.id]
+  // 4. Existing email but not a Firebase account -> block Firebase login
+  if (user && user.auth_provider !== "firebase") {
+    throw createError(
+      409,
+      "Email already exists in the system. Please use email/password login"
     );
-
-    const [reload] = await db.query("SELECT * FROM users WHERE id = ?", [
-      user.id,
-    ]);
-    user = reload[0];
   }
 
-  // 5. New Firebase user
+  // 5. Existing Firebase account with different UID -> block login
+  if (user && user.firebase_uid && user.firebase_uid !== firebaseUid) {
+    throw createError(409, "Email is linked with a different Firebase account");
+  }
+
+  // 6. New Firebase user
   if (!user) {
     const [result] = await db.query(
       `INSERT INTO users
@@ -78,7 +72,7 @@ export const firebaseLoginUser = async ({ idToken }) => {
     user = created[0];
   }
 
-  // 6. Issue JWT
+  // 7. Issue JWT
   const tokens = generateTokens(user);
   return { user: sanitizeUser(user), ...tokens };
 };
