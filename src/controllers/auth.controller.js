@@ -85,6 +85,12 @@ export const verifyEmailFromLink = async (req, res) => {
 
   try {
     await verifyEmailRegistration({ token });
+
+    const loginUrl = getFrontendLoginUrl();
+    if (loginUrl) {
+      return res.redirect(302, loginUrl);
+    }
+
     return res
       .status(200)
       .type("html")
