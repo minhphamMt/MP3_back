@@ -85,4 +85,27 @@ describe("email.service transport selection", () => {
       })
     );
   });
+
+  it("sends password reset email using smtp transport", async () => {
+    delete process.env.EMAIL_TRANSPORT;
+    process.env.SMTP_HOST = "smtp.example.com";
+    process.env.SMTP_PORT = "587";
+
+    const { sendPasswordResetEmail } = await loadEmailService();
+
+    mockSendMail.mockResolvedValueOnce({ messageId: "xyz" });
+
+    await sendPasswordResetEmail({
+      email: "tester@example.com",
+      displayName: "Tester",
+      verificationCode: "654321",
+    });
+
+    expect(mockSendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "tester@example.com",
+        subject: "Mã đặt lại mật khẩu",
+      })
+    );
+  });
 });

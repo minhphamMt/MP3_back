@@ -6,6 +6,7 @@ const mockDb = {
 };
 
 const mockSendVerificationEmail = jest.fn();
+const mockSendPasswordResetEmail = jest.fn();
 
 const mockConnection = {
   beginTransaction: jest.fn(),
@@ -22,6 +23,7 @@ const loadAuthService = async () => {
 
   jest.unstable_mockModule("../services/email.service.js", () => ({
     sendVerificationEmail: mockSendVerificationEmail,
+    sendPasswordResetEmail: mockSendPasswordResetEmail,
   }));
 
   jest.unstable_mockModule("bcrypt", () => ({
@@ -162,5 +164,69 @@ describe("auth.service email verification flow", () => {
         "Nếu email hợp lệ, chúng tôi đã gửi lại hướng dẫn xác thực tài khoản.",
     });
     expect(mockSendVerificationEmail).not.toHaveBeenCalled();
+  });
+
+  it("requestPasswordReset stores reset code and sends email for active local user", async () => {
+    mockDb.query
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 12,
+            email: "tester@example.com",
+            display_name: "Tester",
+            is_active: 1,
+            auth_provider: "local",
+          },
+        ],
+      ])
+      .mockResolvedValueOnce([{ affectedRows: 1 }]);
+
+    const { requestPasswordReset } = await loadAuthService();
+
+    const result = await requestPasswordReset({ email: "tester@example.com" });
+
+    expect(result).toEqual({
+      message: "Nếu email hợp lệ, chúng tôi đã gửi mã đặt lại mật khẩu.",
+    });
+    expect(mockDb.query.mock.calls[1][0]).toContain("INSERT INTO password_resets");
+    expect(mockSendPasswordResetEmail).toHaveBeenCalledTimes(1);
+    expect(mockSendPasswordResetEmail.mock.calls[0][0].verificationCode).toMatch(
+      /^\d{6}$/
+    );
+  });
+
+  it("resetPassword updates password and marks reset code used", async () => {
+    mockDb.query
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 55,
+            email: "tester@example.com",
+            expires_at: new Date(Date.now() + 60_000),
+          },
+        ],
+      ])
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 99,
+            email: "tester@example.com",
+          },
+        ],
+      ])
+      .mockResolvedValueOnce([{ affectedRows: 1 }])
+      .mockResolvedValueOnce([{ affectedRows: 1 }]);
+
+    const { resetPassword } = await loadAuthService();
+
+    const result = await resetPassword({
+      email: "tester@example.com",
+      verification_code: "123456",
+      new_password: "new-secret",
+    });
+
+    expect(result).toEqual({ message: "Đặt lại mật khẩu thành công" });
+    expect(mockDb.query.mock.calls[2][0]).toContain("UPDATE users SET password_hash");
+    expect(mockDb.query.mock.calls[3][0]).toContain("UPDATE password_resets SET used_at");
   });
 });

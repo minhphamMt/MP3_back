@@ -2,6 +2,8 @@ import {
   loginUser,
   refreshTokens,
   registerUser,
+  requestPasswordReset,
+  resetPassword,
   resendVerificationEmail,
   verifyEmailRegistration,
 } from "../services/auth.service.js";
@@ -88,6 +90,24 @@ export const refresh = async (req, res, next) => {
   }
 };
 
+export const forgotPassword = async (req, res, next) => {
+  try {
+    const result = await requestPasswordReset(req.body);
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const confirmResetPassword = async (req, res, next) => {
+  try {
+    const result = await resetPassword(req.body);
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 export default {
   register,
   verifyEmail,
@@ -95,4 +115,6 @@ export default {
   resendVerification,
   login,
   refresh,
+  forgotPassword,
+  confirmResetPassword,
 };

@@ -69,6 +69,54 @@ export const sendVerificationEmail = async ({
   });
 };
 
+export const sendPasswordResetEmail = async ({
+  email,
+  displayName,
+  verificationCode,
+}) => {
+  const transportMode =
+    process.env.EMAIL_TRANSPORT || (process.env.SMTP_HOST ? "smtp" : "log");
+
+  if (transportMode !== "smtp") {
+    logger.info("Password reset code generated", {
+      email,
+      displayName,
+      verificationCode,
+      transportMode,
+    });
+    return;
+  }
+
+  let nodemailer;
+  try {
+    ({ default: nodemailer } = await import("nodemailer"));
+  } catch (error) {
+    const err = new Error(
+      "nodemailer is required for SMTP transport. Please install dependencies."
+    );
+    err.status = 500;
+    throw err;
+  }
+
+  if (!process.env.SMTP_HOST) {
+    const err = new Error("SMTP_HOST is required when EMAIL_TRANSPORT=smtp");
+    err.status = 500;
+    throw err;
+  }
+
+  const from = process.env.MAIL_FROM || "no-reply@example.com";
+  const transporter = nodemailer.createTransport(buildTransportConfig());
+
+  await transporter.sendMail({
+    from,
+    to: email,
+    subject: "Mã đặt lại mật khẩu",
+    text: `Xin chào ${displayName},\n\nMã đặt lại mật khẩu của bạn là: ${verificationCode}\n\nMã có hiệu lực trong thời gian giới hạn. Nếu không phải bạn, hãy bỏ qua email này.`,
+    html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827"><p>Xin chào <strong>${displayName}</strong>,</p><p>Mã đặt lại mật khẩu của bạn là:</p><p style="font-size:28px;font-weight:700;letter-spacing:6px;color:#2563eb;margin:8px 0 12px;">${verificationCode}</p><p style="font-size:13px;color:#6b7280">Mã có hiệu lực trong thời gian giới hạn. Nếu không phải bạn, hãy bỏ qua email này.</p></div>`,
+  });
+};
+
 export default {
   sendVerificationEmail,
+  sendPasswordResetEmail,
 };

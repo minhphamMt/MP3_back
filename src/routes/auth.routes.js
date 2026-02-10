@@ -3,9 +3,11 @@ import * as authController from "../controllers/auth.controller.js";
 import validate from "../middlewares/validate.middleware.js";
 import {
   firebaseLoginSchema,
+  forgotPasswordSchema,
   loginSchema,
   refreshSchema,
   registerSchema,
+  resetPasswordSchema,
   resendVerificationSchema,
   verifyEmailSchema,
 } from "../validations/auth.schema.js";
@@ -33,5 +35,15 @@ router.post("/firebase", validate(firebaseLoginSchema), authController.firebaseL
 router.post("/login", validate(loginSchema), authController.login);
 router.post("/artist/login", validate(loginSchema), authController.loginArtist);
 router.post("/refresh", validate(refreshSchema), authController.refresh);
+router.post(
+  "/forgot-password",
+  validate(forgotPasswordSchema),
+  authController.forgotPassword
+);
+router.post(
+  "/reset-password",
+  validate(resetPasswordSchema),
+  authController.confirmResetPassword
+);
 
 export default router;

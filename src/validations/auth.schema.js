@@ -43,6 +43,25 @@ export const firebaseLoginSchema = {
   },
 };
 
+export const forgotPasswordSchema = {
+  body: {
+    email: { type: "string", required: true, format: "email" },
+  },
+};
+
+export const resetPasswordSchema = {
+  body: {
+    email: { type: "string", required: true, format: "email" },
+    verification_code: {
+      type: "string",
+      required: true,
+      minLength: 6,
+      maxLength: 6,
+    },
+    new_password: { type: "string", required: true, minLength: 6 },
+  },
+};
+
 export default {
   registerSchema,
   verifyEmailSchema,
@@ -50,4 +69,6 @@ export default {
   loginSchema,
   refreshSchema,
   firebaseLoginSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
 };

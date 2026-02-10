@@ -4,11 +4,14 @@ import jwt from "jsonwebtoken";
 import db from "../config/db.js";
 import { ROLES } from "../constants/roles.js";
 import admin from "../config/firebase.js";
-import { sendVerificationEmail } from "./email.service.js";
+import { sendPasswordResetEmail, sendVerificationEmail } from "./email.service.js";
 
 const SALT_ROUNDS = 10;
 const EMAIL_VERIFY_EXPIRES_MINUTES = Number(
   process.env.EMAIL_VERIFY_EXPIRES_MINUTES || 30
+);
+const PASSWORD_RESET_EXPIRES_MINUTES = Number(
+  process.env.PASSWORD_RESET_EXPIRES_MINUTES || 15
 );
 
 export const firebaseLoginUser = async ({ idToken }) => {
@@ -367,6 +370,99 @@ export const loginUser = async ({ email, password }) => {
   return { user: sanitizeUser(user), ...tokens };
 };
 
+export const requestPasswordReset = async ({ email }) => {
+  const genericMessage =
+    "Nếu email hợp lệ, chúng tôi đã gửi mã đặt lại mật khẩu.";
+  const [rows] = await db.query("SELECT * FROM users WHERE email = ? LIMIT 1", [
+    email,
+  ]);
+  const user = rows[0];
+
+  if (!user || !user.is_active || user.auth_provider === "firebase") {
+    return { message: genericMessage };
+  }
+
+  const verificationCode = createVerificationCode();
+  const tokenHash = hashToken(verificationCode);
+  const expiresAt = new Date(
+    Date.now() + PASSWORD_RESET_EXPIRES_MINUTES * 60 * 1000
+  );
+
+  await db.query(
+    `INSERT INTO password_resets
+      (email, token_hash, expires_at)
+     VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+      token_hash = VALUES(token_hash),
+      expires_at = VALUES(expires_at),
+      used_at = NULL`,
+    [email, tokenHash, expiresAt]
+  );
+
+  await sendPasswordResetEmail({
+    email,
+    displayName: user.display_name || user.email,
+    verificationCode,
+  });
+
+  return { message: genericMessage };
+};
+
+export const resetPassword = async ({ email, verification_code, new_password }) => {
+  if (!email || !verification_code || !new_password) {
+    throw createError(400, "Email, mã xác thực và mật khẩu mới là bắt buộc");
+  }
+
+  const code = String(verification_code).trim();
+  if (!/^\d{6}$/.test(code)) {
+    throw createError(400, "Mã xác thực không hợp lệ");
+  }
+
+  if (String(new_password).length < 6) {
+    throw createError(400, "Mật khẩu mới phải có ít nhất 6 ký tự");
+  }
+
+  const tokenHash = hashToken(code);
+  const [resetRows] = await db.query(
+    `SELECT * FROM password_resets
+      WHERE email = ?
+        AND token_hash = ?
+        AND used_at IS NULL
+      LIMIT 1`,
+    [email, tokenHash]
+  );
+
+  const resetRequest = resetRows[0];
+  if (!resetRequest) {
+    throw createError(400, "Mã đặt lại mật khẩu không hợp lệ hoặc đã được sử dụng");
+  }
+
+  if (new Date(resetRequest.expires_at).getTime() < Date.now()) {
+    throw createError(400, "Mã đặt lại mật khẩu đã hết hạn");
+  }
+
+  const [userRows] = await db.query("SELECT * FROM users WHERE email = ? LIMIT 1", [
+    email,
+  ]);
+  const user = userRows[0];
+  if (!user) {
+    throw createError(404, "Không tìm thấy người dùng");
+  }
+
+  const hashedPassword = await bcrypt.hash(new_password, SALT_ROUNDS);
+  await db.query("UPDATE users SET password_hash = ? WHERE id = ?", [
+    hashedPassword,
+    user.id,
+  ]);
+  await db.query("UPDATE password_resets SET used_at = NOW() WHERE id = ?", [
+    resetRequest.id,
+  ]);
+
+  return {
+    message: "Đặt lại mật khẩu thành công",
+  };
+};
+
 export const refreshTokens = async (refreshToken) => {
   if (!refreshToken) {
     throw createError(400, "Refresh token is required");
@@ -402,4 +498,6 @@ export default {
   loginUser,
   refreshTokens,
   firebaseLoginUser,
+  requestPasswordReset,
+  resetPassword,
 };

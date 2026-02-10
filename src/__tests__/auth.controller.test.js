@@ -11,6 +11,8 @@ const loadApp = async () => {
     resendVerificationEmail: jest.fn(),
     verifyEmailRegistration: mockVerifyEmailRegistration,
     firebaseLoginUser: jest.fn(),
+    requestPasswordReset: jest.fn(),
+    resetPassword: jest.fn(),
   }));
 
   jest.unstable_mockModule("../config/db.js", () => ({
