@@ -4,12 +4,13 @@ import { successResponse, errorResponse } from "../utils/response.js";
 export const getSimilarSongsHandler = async (req, res, next) => {
   try {
     const songId = Number(req.params.songId);
+    const userId = Number(req.user?.id) || null;
 
     if (!Number.isInteger(songId) || songId <= 0) {
       return errorResponse(res, "Invalid songId", 400);
     }
 
-    const results = await getSimilarSongs(songId);
+    const results = await getSimilarSongs(songId, userId);
     return successResponse(res, results);
   } catch (err) {
     if (err.status) {

@@ -6,24 +6,57 @@ import db from "../config/db.js";
  * =========================
  */
 
+const parsePositiveInt = (value, fallback) => {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return parsed;
+};
+
+const parseNonNegativeNumber = (value, fallback) => {
+  const parsed = Number(value);
+  if (Number.isNaN(parsed) || parsed < 0) {
+    return fallback;
+  }
+
+  return parsed;
+};
+
 // candidate size
-const AUDIO_CANDIDATES = 150;
-const META_CANDIDATES = 150;
+const AUDIO_CANDIDATES = parsePositiveInt(
+  process.env.SIMILAR_AUDIO_CANDIDATES,
+  200
+);
+const META_CANDIDATES = parsePositiveInt(
+  process.env.SIMILAR_META_CANDIDATES,
+  200
+);
 
 // final results
-const FINAL_RESULTS = 15;
+const FINAL_RESULTS = parsePositiveInt(process.env.SIMILAR_FINAL_RESULTS, 15);
 
 // weight
-const W_AUDIO = 0.5;
-const W_META = 0.45;
-const W_ARTIST_BONUS = 0.45;
-const W_ALBUM_BONUS = 0.10;
+const W_AUDIO = parseNonNegativeNumber(process.env.SIMILAR_WEIGHT_AUDIO, 0.5);
+const W_META = parseNonNegativeNumber(process.env.SIMILAR_WEIGHT_META, 0.45);
+const W_ARTIST_BONUS = parseNonNegativeNumber(
+  process.env.SIMILAR_WEIGHT_ARTIST_BONUS,
+  0.45
+);
+const W_ALBUM_BONUS = parseNonNegativeNumber(
+  process.env.SIMILAR_WEIGHT_ALBUM_BONUS,
+  0.1
+);
 
 // diversity
-const MAX_PER_ARTIST = 3;
+const MAX_PER_ARTIST = parsePositiveInt(
+  process.env.SIMILAR_MAX_PER_ARTIST,
+  3
+);
 
 // history filter
-const RECENT_HOURS = 2;
+const RECENT_HOURS = parsePositiveInt(process.env.SIMILAR_RECENT_HOURS, 2);
 
 /**
  * =========================
@@ -142,6 +175,54 @@ const getAllCandidates = async (songId, userId) => {
   }));
 };
 
+const getFallbackCandidates = async (song, excludeSongId, limit) => {
+  const safeLimit = parsePositiveInt(limit, FINAL_RESULTS);
+  const [rows] = await db.query(
+    `
+    SELECT
+      s.id,
+      s.title,
+      s.artist_id,
+      s.album_id,
+      s.play_count,
+      CASE WHEN s.artist_id = ? THEN 1 ELSE 0 END AS same_artist,
+      CASE WHEN s.album_id = ? THEN 1 ELSE 0 END AS same_album
+    FROM songs s
+    WHERE s.id != ?
+      AND s.status = 'approved'
+      AND s.is_deleted = 0
+    ORDER BY same_artist DESC, same_album DESC, s.play_count DESC
+    LIMIT ?;
+    `,
+    [song.artist_id || null, song.album_id || null, excludeSongId, safeLimit * 3]
+  );
+
+  const artistCount = {};
+  const selected = [];
+
+  for (const row of rows) {
+    artistCount[row.artist_id] = artistCount[row.artist_id] || 0;
+    if (artistCount[row.artist_id] >= MAX_PER_ARTIST) {
+      continue;
+    }
+
+    artistCount[row.artist_id]++;
+    selected.push({
+      songId: row.id,
+      title: row.title,
+      score: Number(
+        (row.same_artist * W_ARTIST_BONUS + row.same_album * W_ALBUM_BONUS).toFixed(6)
+      ),
+    });
+
+    if (selected.length >= safeLimit) {
+      break;
+    }
+  }
+
+  return selected;
+};
+
 /**
  * =========================
  * MAIN RECOMMENDATION
@@ -200,8 +281,20 @@ export const getSimilarSongs = async (songId, userId = null) => {
         audioSim: c.audioSim || 0,
         metaSim: c.metaSim || 0,
       });
+      return;
     }
+
+    const existing = mergedMap.get(c.id);
+    mergedMap.set(c.id, {
+      ...existing,
+      audioSim: Math.max(existing.audioSim || 0, c.audioSim || 0),
+      metaSim: Math.max(existing.metaSim || 0, c.metaSim || 0),
+    });
   });
+
+  if (!mergedMap.size) {
+    return getFallbackCandidates(query.song, songId, FINAL_RESULTS);
+  }
 
   /**
    * === FINAL RERANK
