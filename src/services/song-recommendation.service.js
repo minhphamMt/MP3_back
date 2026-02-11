@@ -161,6 +161,7 @@ const getAllCandidates = async (songId, userId) => {
             AND listened_at >= NOW() - INTERVAL ? HOUR
         )
       )
+    ORDER BY s.id ASC
     `,
     [songId, userId, userId, RECENT_HOURS]
   );
@@ -192,6 +193,7 @@ const getFallbackCandidates = async (song, excludeSongId, limit) => {
       AND s.status = 'approved'
       AND s.is_deleted = 0
     ORDER BY same_artist DESC, same_album DESC, s.play_count DESC
+    ORDER BY same_artist DESC, same_album DESC, s.play_count DESC, s.id ASC
     LIMIT ?;
     `,
     [song.artist_id || null, song.album_id || null, excludeSongId, safeLimit * 3]
@@ -250,7 +252,7 @@ export const getSimilarSongs = async (songId, userId = null) => {
             ? cosineSimilarity(query.audioVec, c.audioVec)
             : 0,
         }))
-        .sort((a, b) => b.audioSim - a.audioSim)
+        .sort((a, b) => b.audioSim - a.audioSim || a.id - b.id)
         .slice(0, AUDIO_CANDIDATES)
     : [];
 
@@ -265,7 +267,7 @@ export const getSimilarSongs = async (songId, userId = null) => {
             ? cosineSimilarity(query.metaVec, c.metaVec)
             : 0,
         }))
-        .sort((a, b) => b.metaSim - a.metaSim)
+        .sort((a, b) => b.metaSim - a.metaSim || a.id - b.id)
         .slice(0, META_CANDIDATES)
     : [];
 
@@ -321,7 +323,7 @@ export const getSimilarSongs = async (songId, userId = null) => {
         score,
       };
     })
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => b.score - a.score || a.songId - b.songId);
 
   /**
    * === DIVERSITY FILTER (LIMIT PER ARTIST)
