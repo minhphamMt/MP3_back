@@ -119,7 +119,7 @@ const searchArtists = async (keyword, { limit, offset, includeDeleted }) => {
       ANY_VALUE(a.deleted_by) AS deleted_by,
       ANY_VALUE(a.deleted_by_role) AS deleted_by_role,
       ANY_VALUE(a.created_at) AS created_at,
-      ANY_VALUE(a.updated_at) AS updated_at,
+      NULL AS updated_at,
       COUNT(s.id) AS song_count,
       (ANY_VALUE(a.name) LIKE ?) * 5 +
       (ANY_VALUE(a.name) LIKE ?) * 3 +
