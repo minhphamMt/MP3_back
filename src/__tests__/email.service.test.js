@@ -2,7 +2,9 @@ import { jest } from "@jest/globals";
 
 const mockLoggerInfo = jest.fn();
 const mockSendMail = jest.fn();
+const mockVerify = jest.fn();
 const mockCreateTransport = jest.fn(() => ({
+  verify: mockVerify,
   sendMail: mockSendMail,
 }));
 
@@ -27,20 +29,24 @@ const loadEmailService = async () => {
 
 describe("email.service transport selection", () => {
   const originalEnv = process.env;
+  const originalFetch = global.fetch;
 
   beforeEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
     process.env = { ...originalEnv };
+    global.fetch = jest.fn();
   });
 
   afterAll(() => {
     process.env = originalEnv;
+    global.fetch = originalFetch;
   });
 
-  it("logs verification code when smtp is not configured", async () => {
+  it("logs verification code when transport is not configured", async () => {
     delete process.env.EMAIL_TRANSPORT;
     delete process.env.SMTP_HOST;
+    delete process.env.BREVO_API_KEY;
 
     const { sendVerificationEmail } = await loadEmailService();
 
@@ -58,19 +64,48 @@ describe("email.service transport selection", () => {
       })
     );
     expect(mockSendMail).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it("auto-uses smtp when SMTP_HOST is configured", async () => {
+  it("auto-uses brevo when BREVO_API_KEY is configured", async () => {
     delete process.env.EMAIL_TRANSPORT;
+    process.env.BREVO_API_KEY = "test-api-key";
+    process.env.BREVO_SENDER_EMAIL = "no-reply@example.com";
+    process.env.BREVO_SENDER_NAME = "Music App";
+
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      text: jest.fn().mockResolvedValue(""),
+    });
+
+    const { sendVerificationEmail } = await loadEmailService();
+
+    await sendVerificationEmail({
+      email: "tester@example.com",
+      displayName: "Tester",
+      verificationCode: "123456",
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://api.brevo.com/v3/smtp/email",
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(mockSendMail).not.toHaveBeenCalled();
+  });
+
+  it("uses smtp when EMAIL_TRANSPORT=smtp", async () => {
+    process.env.EMAIL_TRANSPORT = "smtp";
     process.env.SMTP_HOST = "smtp.example.com";
     process.env.SMTP_PORT = "465";
     process.env.SMTP_USER = "mailer@example.com";
     process.env.SMTP_PASS = "app-password";
     process.env.MAIL_FROM = "Music App <no-reply@example.com>";
 
-    const { sendVerificationEmail } = await loadEmailService();
-
+    mockVerify.mockResolvedValueOnce(true);
     mockSendMail.mockResolvedValueOnce({ messageId: "abc" });
+
+    const { sendVerificationEmail } = await loadEmailService();
 
     await sendVerificationEmail({
       email: "tester@example.com",
@@ -86,39 +121,21 @@ describe("email.service transport selection", () => {
       })
     );
     expect(mockSendMail).toHaveBeenCalledTimes(1);
-    expect(mockSendMail).toHaveBeenCalledWith(
-      expect.objectContaining({
-        to: "tester@example.com",
-        subject: "Xác nhận email đăng ký tài khoản",
-      })
-    );
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it("maps EMAIL_TRANSPORT=resend to smtp for backward compatibility", async () => {
-    process.env.EMAIL_TRANSPORT = "resend";
-    process.env.SMTP_HOST = "smtp.example.com";
+  it("sends password reset email using brevo transport", async () => {
+    process.env.EMAIL_TRANSPORT = "brevo";
+    process.env.BREVO_API_KEY = "test-api-key";
+    process.env.BREVO_SENDER_EMAIL = "no-reply@example.com";
 
-    const { sendVerificationEmail } = await loadEmailService();
-
-    mockSendMail.mockResolvedValueOnce({ messageId: "old-env" });
-
-    await sendVerificationEmail({
-      email: "tester@example.com",
-      displayName: "Tester",
-      verificationCode: "123456",
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      text: jest.fn().mockResolvedValue(""),
     });
 
-    expect(mockSendMail).toHaveBeenCalledTimes(1);
-  });
-
-  it("sends password reset email using smtp transport", async () => {
-    process.env.EMAIL_TRANSPORT = "smtp";
-    process.env.SMTP_HOST = "smtp.example.com";
-    process.env.SMTP_PORT = "465";
-
     const { sendPasswordResetEmail } = await loadEmailService();
-
-    mockSendMail.mockResolvedValueOnce({ messageId: "xyz" });
 
     await sendPasswordResetEmail({
       email: "tester@example.com",
@@ -126,11 +143,10 @@ describe("email.service transport selection", () => {
       verificationCode: "654321",
     });
 
-    expect(mockSendMail).toHaveBeenCalledWith(
-      expect.objectContaining({
-        to: "tester@example.com",
-        subject: "Mã đặt lại mật khẩu",
-      })
-    );
+    const [, request] = global.fetch.mock.calls[0];
+    const payload = JSON.parse(request.body);
+
+    expect(payload.subject).toBe("Mã đặt lại mật khẩu");
+    expect(payload.to).toEqual([{ email: "tester@example.com" }]);
   });
 });

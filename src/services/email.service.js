@@ -10,9 +10,10 @@ const detectTransportMode = () => {
 
   if (mode === "log") return "log";
   if (mode === "smtp") return "smtp";
-  if (mode === "resend") return "resend"; // sửa cho đúng logic (dù bạn đang dùng smtp)
+  if (mode === "brevo") return "brevo";
 
   // Auto-detect
+  if (process.env.BREVO_API_KEY) return "brevo";
   if (process.env.SMTP_HOST) return "smtp";
   return "log";
 };
@@ -103,6 +104,47 @@ const sendWithSmtp = async ({ email, subject, text, html }) => {
   });
 };
 
+const sendWithBrevo = async ({ email, subject, text, html }) => {
+  const apiKey = process.env.BREVO_API_KEY;
+  if (!apiKey) {
+    const err = new Error("BREVO_API_KEY is required when EMAIL_TRANSPORT=brevo (or when BREVO_API_KEY is used).");
+    err.status = 500;
+    throw err;
+  }
+
+  const senderEmail = process.env.BREVO_SENDER_EMAIL;
+  if (!senderEmail) {
+    const err = new Error("BREVO_SENDER_EMAIL is required for Brevo transport.");
+    err.status = 500;
+    throw err;
+  }
+
+  const senderName = process.env.BREVO_SENDER_NAME || "Music App";
+
+  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "api-key": apiKey,
+    },
+    body: JSON.stringify({
+      sender: { email: senderEmail, name: senderName },
+      to: [{ email }],
+      subject,
+      textContent: text,
+      htmlContent: html,
+      replyTo: { email: senderEmail, name: senderName },
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    const err = new Error(`Brevo API error (${response.status}): ${body}`);
+    err.status = response.status;
+    throw err;
+  }
+};
+
 const sendEmail = async ({ email, displayName, verificationCode, kind }) => {
   const transportMode = detectTransportMode();
 
@@ -127,7 +169,12 @@ const sendEmail = async ({ email, displayName, verificationCode, kind }) => {
       return;
     }
 
-    // Nếu không dùng smtp, default log
+    if (transportMode === "brevo") {
+      await sendWithBrevo({ email, subject, text, html });
+      return;
+    }
+
+    // Nếu không dùng transport gửi mail thật, default log
     logger.info(isVerification ? "Email verification code generated" : "Password reset code generated", {
       email,
       displayName: safeName,
