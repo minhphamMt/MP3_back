@@ -1,5 +1,26 @@
 import db from "../config/db.js";
 import { REGION_GENRES } from "../constants/region-map.js";
+
+const TOP50_BY_GENRE_CACHE_TTL_MS = 60 * 1000;
+let top50ByGenreCache = null;
+
+const getCachedTop50ByGenre = () => {
+  if (!top50ByGenreCache) return null;
+
+  if (top50ByGenreCache.expiresAt > Date.now()) {
+    return top50ByGenreCache.data;
+  }
+
+  top50ByGenreCache = null;
+  return null;
+};
+
+const setCachedTop50ByGenre = (data) => {
+  top50ByGenreCache = {
+    data,
+    expiresAt: Date.now() + TOP50_BY_GENRE_CACHE_TTL_MS,
+  };
+};
 /**
  * Zing Chart – Top 10 bài theo lượt nghe trong ngày
  */
@@ -306,100 +327,104 @@ export const getWeeklyTop5 = async () => {
 };
 
 export const getTop50SongsByGenres = async () => {
-  /**
-   * 1️⃣ Lấy các genre có >= 50 bài approved
-   */
-  const [genres] = await db.query(`
+  const cached = getCachedTop50ByGenre();
+  if (cached) {
+    return cached;
+  }
+
+  const [rows] = await db.query(`
     SELECT
-      g.id,
-      ANY_VALUE(g.name) AS name,
-      COUNT(sg.song_id) AS song_count
-    FROM genres g
-    JOIN song_genres sg ON sg.genre_id = g.id
-    JOIN songs s ON s.id = sg.song_id
-    WHERE s.status = 'approved'
-    AND s.is_deleted = 0
-    AND s.release_date IS NOT NULL
-    AND s.release_date <= NOW()
-    GROUP BY g.id
-    HAVING song_count >= 50
-  `);
-
-  if (!genres.length) return [];
-
-  /**
-   * 2️⃣ Với mỗi genre, lấy top 50 bài theo lượt nghe
-   */
-  const result = [];
-
-  for (const genre of genres) {
-    const [songs] = await db.query(
-      `
+      ranked.genre_id,
+      ranked.genre_name,
+      ranked.song_id,
+      ranked.title,
+      ranked.duration,
+      ranked.cover_url,
+      ranked.play_count,
+      ranked.artist_id,
+      ranked.artist_name,
+      ranked.album_id,
+      ranked.album_title,
+      ranked.album_cover_url,
+      ranked.album_release_date,
+      ranked.rank_in_genre
+    FROM (
       SELECT
-        s.id,
+        g.id AS genre_id,
+        g.name AS genre_name,
+        s.id AS song_id,
         s.title,
         s.duration,
         s.cover_url,
         s.play_count,
-
-        s.artist_id,
+        ar.id AS artist_id,
         ar.name AS artist_name,
-
-        s.album_id,
+        al.id AS album_id,
         al.title AS album_title,
         al.cover_url AS album_cover_url,
-        al.release_date AS album_release_date
+        al.release_date AS album_release_date,
+        ROW_NUMBER() OVER (
+          PARTITION BY g.id
+          ORDER BY s.play_count DESC, s.id DESC
+        ) AS rank_in_genre,
+        COUNT(*) OVER (PARTITION BY g.id) AS genre_song_count
       FROM songs s
       JOIN song_genres sg ON sg.song_id = s.id
+      JOIN genres g ON g.id = sg.genre_id
       LEFT JOIN artists ar ON ar.id = s.artist_id
       LEFT JOIN albums al ON al.id = s.album_id
-      WHERE
-        sg.genre_id = ?
-        AND s.status = 'approved'
+      WHERE s.status = 'approved'
         AND s.is_deleted = 0
         AND (ar.id IS NULL OR ar.is_deleted = 0)
         AND (al.id IS NULL OR al.is_deleted = 0)
         AND s.release_date IS NOT NULL
         AND s.release_date <= NOW()
-      ORDER BY s.play_count DESC
-      LIMIT 50
-      `,
-      [genre.id]
-    );
+    ) ranked
+    WHERE ranked.genre_song_count >= 50
+      AND ranked.rank_in_genre <= 50
+    ORDER BY ranked.genre_id ASC, ranked.rank_in_genre ASC
+  `);
 
-    if (songs.length === 50) {
-      result.push({
+  const grouped = new Map();
+
+  rows.forEach((row) => {
+    if (!grouped.has(row.genre_id)) {
+      grouped.set(row.genre_id, {
         genre: {
-          id: genre.id,
-          name: genre.name,
+          id: row.genre_id,
+          name: row.genre_name,
         },
-        songs: songs.map((row, index) => ({
-          rank: index + 1,
-          id: row.id,
-          title: row.title,
-          duration: row.duration,
-          cover_url: row.cover_url,
-          play_count: row.play_count,
-
-          artist: row.artist_id
-            ? {
-                id: row.artist_id,
-                name: row.artist_name,
-              }
-            : null,
-
-          album: row.album_id
-            ? {
-                id: row.album_id,
-                title: row.album_title,
-                cover_url: row.album_cover_url,
-                release_date: row.album_release_date,
-              }
-            : null,
-        })),
+        songs: [],
       });
     }
-  }
+
+    const currentGenre = grouped.get(row.genre_id);
+    currentGenre.songs.push({
+      rank: row.rank_in_genre,
+      id: row.song_id,
+      title: row.title,
+      duration: row.duration,
+      cover_url: row.cover_url,
+      play_count: row.play_count,
+      artist: row.artist_id
+        ? {
+            id: row.artist_id,
+            name: row.artist_name,
+          }
+        : null,
+      album: row.album_id
+        ? {
+            id: row.album_id,
+            title: row.album_title,
+            cover_url: row.album_cover_url,
+            release_date: row.album_release_date,
+          }
+        : null,
+    });
+  });
+
+  const result = [...grouped.values()];
+  setCachedTop50ByGenre(result);
 
   return result;
 };
