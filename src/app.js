@@ -55,4 +55,5 @@ if (storageConfig.driver === "local") {
 
 app.use(errorMiddleware);
 
+console.log("✅ Express app configured");
 export default app;
