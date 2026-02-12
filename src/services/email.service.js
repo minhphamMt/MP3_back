@@ -155,7 +155,7 @@ export const sendPasswordResetEmail = async ({
     kind: "password_reset",
   });
 };
-
+console.log("✅ Email service configured using");
 export default {
   sendVerificationEmail,
   sendPasswordResetEmail,
