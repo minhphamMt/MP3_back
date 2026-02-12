@@ -64,35 +64,50 @@ export const getUserListeningHistory = async (
   const [rows] = await db.query(
     `
     SELECT
-      lh.id AS history_id,
-      lh.listened_at,
-      lh.duration,
+  lh.id AS history_id,
+  lh.listened_at,
+  lh.duration,
 
-      s.id AS song_id,
-      s.title AS song_title,
-      s.cover_url,
-      s.duration AS song_duration,
+  s.id AS song_id,
+  s.title AS song_title,
+  s.cover_url,
+  s.duration AS song_duration,
 
-      ar.id AS artist_id,
-      ar.name AS artist_name,
+  ar.id AS artist_id,
+  ar.name AS artist_name,
 
-      al.id AS album_id,
-      al.title AS album_title,
+  al.id AS album_id,
+  al.title AS album_title,
 
-      GROUP_CONCAT(DISTINCT g.name) AS genres
-    FROM listening_history lh
-    JOIN songs s ON s.id = lh.song_id
-    LEFT JOIN artists ar ON ar.id = s.artist_id
-    LEFT JOIN albums al ON al.id = s.album_id
-    LEFT JOIN song_genres sg ON sg.song_id = s.id
-    LEFT JOIN genres g ON g.id = sg.genre_id
-    WHERE lh.user_id = ?
-    AND s.is_deleted = 0
-      AND (ar.id IS NULL OR ar.is_deleted = 0)
-      AND (al.id IS NULL OR al.is_deleted = 0)
-    GROUP BY lh.id
-    ORDER BY lh.listened_at DESC
-    LIMIT ? OFFSET ?
+  GROUP_CONCAT(DISTINCT g.name) AS genres
+
+FROM listening_history lh
+JOIN songs s ON s.id = lh.song_id
+LEFT JOIN artists ar ON ar.id = s.artist_id
+LEFT JOIN albums al ON al.id = s.album_id
+LEFT JOIN song_genres sg ON sg.song_id = s.id
+LEFT JOIN genres g ON g.id = sg.genre_id
+
+WHERE lh.user_id = ?
+AND s.is_deleted = 0
+AND (ar.id IS NULL OR ar.is_deleted = 0)
+AND (al.id IS NULL OR al.is_deleted = 0)
+
+GROUP BY 
+  lh.id,
+  lh.listened_at,
+  lh.duration,
+  s.id,
+  s.title,
+  s.cover_url,
+  s.duration,
+  ar.id,
+  ar.name,
+  al.id,
+  al.title
+
+ORDER BY lh.listened_at DESC
+LIMIT ? OFFSET ?
     `,
     [userId, limit, offset]
   );
