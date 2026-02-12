@@ -1,7 +1,7 @@
 import db from "../config/db.js";
 import ROLES from "../constants/roles.js";
 import { buildPaginationMeta } from "../utils/pagination.js";
-import { generateZingId } from "../utils/zing-id.js";
+import { generateZingId } from "../utils/Zing-id.js";
 
 const normalizeGenres = (genres) => {
   if (!genres) return [];
