@@ -146,3 +146,4 @@ describe("email.service transport selection", () => {
     );
   });
 });
+console.log("✅ Email service test configured");
