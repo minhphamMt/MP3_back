@@ -2,6 +2,9 @@ import { jest } from "@jest/globals";
 
 const mockLoggerInfo = jest.fn();
 const mockSendMail = jest.fn();
+const mockCreateTransport = jest.fn(() => ({
+  sendMail: mockSendMail,
+}));
 
 const loadEmailService = async () => {
   jest.unstable_mockModule("../utils/logger.js", () => ({
@@ -15,9 +18,7 @@ const loadEmailService = async () => {
 
   jest.unstable_mockModule("nodemailer", () => ({
     default: {
-      createTransport: jest.fn(() => ({
-        sendMail: mockSendMail,
-      })),
+      createTransport: mockCreateTransport,
     },
   }));
 
@@ -26,24 +27,20 @@ const loadEmailService = async () => {
 
 describe("email.service transport selection", () => {
   const originalEnv = process.env;
-  const originalFetch = global.fetch;
 
   beforeEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
     process.env = { ...originalEnv };
-    global.fetch = jest.fn();
   });
 
   afterAll(() => {
     process.env = originalEnv;
-    global.fetch = originalFetch;
   });
 
-  it("logs verification code when smtp and resend are not configured", async () => {
+  it("logs verification code when smtp is not configured", async () => {
     delete process.env.EMAIL_TRANSPORT;
     delete process.env.SMTP_HOST;
-    delete process.env.RESEND_API_KEY;
 
     const { sendVerificationEmail } = await loadEmailService();
 
@@ -61,14 +58,12 @@ describe("email.service transport selection", () => {
       })
     );
     expect(mockSendMail).not.toHaveBeenCalled();
-    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it("auto-uses smtp when SMTP_HOST is configured", async () => {
     delete process.env.EMAIL_TRANSPORT;
-    delete process.env.RESEND_API_KEY;
     process.env.SMTP_HOST = "smtp.example.com";
-    process.env.SMTP_PORT = "587";
+    process.env.SMTP_PORT = "465";
     process.env.SMTP_USER = "mailer@example.com";
     process.env.SMTP_PASS = "app-password";
     process.env.MAIL_FROM = "Music App <no-reply@example.com>";
@@ -83,6 +78,13 @@ describe("email.service transport selection", () => {
       verificationCode: "123456",
     });
 
+    expect(mockCreateTransport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        host: "smtp.example.com",
+        port: 465,
+        secure: true,
+      })
+    );
     expect(mockSendMail).toHaveBeenCalledTimes(1);
     expect(mockSendMail).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -90,22 +92,15 @@ describe("email.service transport selection", () => {
         subject: "Xác nhận email đăng ký tài khoản",
       })
     );
-    expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it("auto-uses resend when RESEND_API_KEY is configured", async () => {
-    delete process.env.EMAIL_TRANSPORT;
-    delete process.env.SMTP_HOST;
-    process.env.RESEND_API_KEY = "re_test_key";
-    process.env.MAIL_FROM = "Music App <onboarding@resend.dev>";
-
-    global.fetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      text: async () => "",
-    });
+  it("maps EMAIL_TRANSPORT=resend to smtp for backward compatibility", async () => {
+    process.env.EMAIL_TRANSPORT = "resend";
+    process.env.SMTP_HOST = "smtp.example.com";
 
     const { sendVerificationEmail } = await loadEmailService();
+
+    mockSendMail.mockResolvedValueOnce({ messageId: "old-env" });
 
     await sendVerificationEmail({
       email: "tester@example.com",
@@ -113,20 +108,13 @@ describe("email.service transport selection", () => {
       verificationCode: "123456",
     });
 
-    expect(global.fetch).toHaveBeenCalledTimes(1);
-    expect(global.fetch).toHaveBeenCalledWith(
-      "https://api.resend.com/emails",
-      expect.objectContaining({
-        method: "POST",
-      })
-    );
-    expect(mockSendMail).not.toHaveBeenCalled();
+    expect(mockSendMail).toHaveBeenCalledTimes(1);
   });
 
   it("sends password reset email using smtp transport", async () => {
     process.env.EMAIL_TRANSPORT = "smtp";
     process.env.SMTP_HOST = "smtp.example.com";
-    process.env.SMTP_PORT = "587";
+    process.env.SMTP_PORT = "465";
 
     const { sendPasswordResetEmail } = await loadEmailService();
 
@@ -146,4 +134,3 @@ describe("email.service transport selection", () => {
     );
   });
 });
-console.log("✅ Email service test configured");

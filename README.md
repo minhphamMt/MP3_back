@@ -1,28 +1,29 @@
-## Cấu hình gửi email trên Render (khuyên dùng Resend)
+## Cấu hình gửi email trên Render bằng NodeMailer (SMTP)
 
-Render có thể chặn outbound SMTP port 587, vì vậy backend này hỗ trợ gửi email qua Resend API (HTTPS/443).
+Backend đã chuyển về dùng **NodeMailer** để gửi email xác thực/đặt lại mật khẩu.
 
 ### 1) Thiết lập biến môi trường
 
 ```bash
-EMAIL_TRANSPORT=resend
-RESEND_API_KEY=re_xxx
-MAIL_FROM=Music App <onboarding@resend.dev>
+EMAIL_TRANSPORT=smtp
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_USER=your_email@gmail.com
+SMTP_PASS=your_app_password
+MAIL_FROM="Music App <your_email@gmail.com>"
 ```
 
-> `MAIL_FROM` cần dùng domain/sender đã được Resend xác thực.
+> Mặc định dùng cổng `465` (SMTPS), thường ổn định hơn `587` trên một số môi trường triển khai.
 
 ### 2) Cơ chế chọn transport
 
-- Nếu `EMAIL_TRANSPORT` được đặt, hệ thống dùng đúng giá trị đó (`resend`, `smtp`, `log`).
+- Nếu `EMAIL_TRANSPORT=smtp` -> gửi mail qua SMTP.
+- Nếu `EMAIL_TRANSPORT=log` -> không gửi mail thật, chỉ log mã xác thực.
 - Nếu không đặt `EMAIL_TRANSPORT`:
-  - Có `RESEND_API_KEY` -> tự dùng `resend`.
   - Có `SMTP_HOST` -> tự dùng `smtp`.
-  - Không có gì -> `log` (chỉ log mã xác thực).
+  - Không có -> `log`.
 
-### 3) Fallback
-
-Để debug local mà không gửi mail thật, dùng:
+### 3) Fallback local debug
 
 ```bash
 EMAIL_TRANSPORT=log

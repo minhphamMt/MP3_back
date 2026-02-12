@@ -7,8 +7,9 @@ const parsePort = (value, fallback) => {
 };
 
 const detectTransportMode = () => {
-  if (process.env.EMAIL_TRANSPORT) return process.env.EMAIL_TRANSPORT;
-  if (process.env.RESEND_API_KEY) return "resend";
+  if (process.env.EMAIL_TRANSPORT === "log") return "log";
+  if (process.env.EMAIL_TRANSPORT === "smtp") return "smtp";
+  if (process.env.EMAIL_TRANSPORT === "resend") return "smtp";
   if (process.env.SMTP_HOST) return "smtp";
   return "log";
 };
@@ -16,7 +17,7 @@ const detectTransportMode = () => {
 const getFromAddress = () => process.env.MAIL_FROM || "no-reply@example.com";
 
 const buildTransportConfig = () => {
-  const port = parsePort(process.env.SMTP_PORT, 587);
+  const port = parsePort(process.env.SMTP_PORT, 465);
   return {
     host: process.env.SMTP_HOST,
     port,
@@ -60,39 +61,6 @@ const sendWithSmtp = async ({ email, subject, text, html }) => {
   });
 };
 
-const sendWithResend = async ({ email, subject, html, text }) => {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
-    const err = new Error(
-      "RESEND_API_KEY is required when EMAIL_TRANSPORT=resend"
-    );
-    err.status = 500;
-    throw err;
-  }
-
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: getFromAddress(),
-      to: [email],
-      subject,
-      html,
-      text,
-    }),
-  });
-
-  if (!response.ok) {
-    const responseText = await response.text();
-    const err = new Error(`Resend API error: ${response.status} ${responseText}`);
-    err.status = 502;
-    throw err;
-  }
-};
-
 const sendEmail = async ({ email, displayName, verificationCode, kind }) => {
   const transportMode = detectTransportMode();
 
@@ -109,11 +77,6 @@ const sendEmail = async ({ email, displayName, verificationCode, kind }) => {
 
   if (transportMode === "smtp") {
     await sendWithSmtp({ email, subject, text, html });
-    return;
-  }
-
-  if (transportMode === "resend") {
-    await sendWithResend({ email, subject, text, html });
     return;
   }
 
@@ -155,7 +118,7 @@ export const sendPasswordResetEmail = async ({
     kind: "password_reset",
   });
 };
-console.log("✅ Email service configured using");
+
 export default {
   sendVerificationEmail,
   sendPasswordResetEmail,
