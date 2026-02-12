@@ -26,20 +26,24 @@ const loadEmailService = async () => {
 
 describe("email.service transport selection", () => {
   const originalEnv = process.env;
+  const originalFetch = global.fetch;
 
   beforeEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
     process.env = { ...originalEnv };
+    global.fetch = jest.fn();
   });
 
   afterAll(() => {
     process.env = originalEnv;
+    global.fetch = originalFetch;
   });
 
-  it("logs verification code when smtp is not configured", async () => {
+  it("logs verification code when smtp and resend are not configured", async () => {
     delete process.env.EMAIL_TRANSPORT;
     delete process.env.SMTP_HOST;
+    delete process.env.RESEND_API_KEY;
 
     const { sendVerificationEmail } = await loadEmailService();
 
@@ -57,10 +61,12 @@ describe("email.service transport selection", () => {
       })
     );
     expect(mockSendMail).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it("auto-uses smtp when SMTP_HOST is configured", async () => {
     delete process.env.EMAIL_TRANSPORT;
+    delete process.env.RESEND_API_KEY;
     process.env.SMTP_HOST = "smtp.example.com";
     process.env.SMTP_PORT = "587";
     process.env.SMTP_USER = "mailer@example.com";
@@ -84,10 +90,41 @@ describe("email.service transport selection", () => {
         subject: "Xác nhận email đăng ký tài khoản",
       })
     );
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("auto-uses resend when RESEND_API_KEY is configured", async () => {
+    delete process.env.EMAIL_TRANSPORT;
+    delete process.env.SMTP_HOST;
+    process.env.RESEND_API_KEY = "re_test_key";
+    process.env.MAIL_FROM = "Music App <onboarding@resend.dev>";
+
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      text: async () => "",
+    });
+
+    const { sendVerificationEmail } = await loadEmailService();
+
+    await sendVerificationEmail({
+      email: "tester@example.com",
+      displayName: "Tester",
+      verificationCode: "123456",
+    });
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://api.resend.com/emails",
+      expect.objectContaining({
+        method: "POST",
+      })
+    );
+    expect(mockSendMail).not.toHaveBeenCalled();
   });
 
   it("sends password reset email using smtp transport", async () => {
-    delete process.env.EMAIL_TRANSPORT;
+    process.env.EMAIL_TRANSPORT = "smtp";
     process.env.SMTP_HOST = "smtp.example.com";
     process.env.SMTP_PORT = "587";
 
