@@ -17,11 +17,14 @@ const detectTransportMode = () => {
 const getFromAddress = () => process.env.MAIL_FROM || "no-reply@example.com";
 
 const buildTransportConfig = () => {
-  const port = parsePort(process.env.SMTP_PORT, 465);
+  const port = parsePort(process.env.SMTP_PORT, 587);
   return {
-    host: process.env.SMTP_HOST,
+    host:
+    process.env.SMTP_HOST === "smtp.gmail.com"
+    ? "74.125.206.108"
+    : process.env.SMTP_HOST,
     port,
-    secure: port === 465,
+    secure: port === 587 ? false : port === 465,
     auth:
       process.env.SMTP_USER && process.env.SMTP_PASS
         ? {
