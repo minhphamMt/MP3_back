@@ -8,6 +8,7 @@ const COLD_START_CANDIDATE_MULTIPLIER = 3;
 const COLD_START_MAX_PER_ARTIST = 2;
 
 const recommendationCache = new Map();
+const coldStartCache = new Map();
 
 const createError = (status, message) => {
   const error = new Error(message);
@@ -69,6 +70,26 @@ const setCachedRecommendations = (userId, recommendations) => {
   });
 };
 
+const getCachedColdStart = (limit) => {
+  const key = String(limit);
+  const cacheEntry = coldStartCache.get(key);
+  if (!cacheEntry) return null;
+
+  if (cacheEntry.expiresAt > Date.now()) {
+    return cacheEntry.data;
+  }
+
+  coldStartCache.delete(key);
+  return null;
+};
+
+const setCachedColdStart = (limit, recommendations) => {
+  coldStartCache.set(String(limit), {
+    data: recommendations,
+    expiresAt: Date.now() + CACHE_TTL_MS,
+  });
+};
+
 const getColdStartPopularSongs = async (limit) => {
   const [rows] = await db.query(
     `
@@ -124,7 +145,31 @@ const getColdStartFreshSongs = async (limit) => {
 };
 
 const getColdStartRandomSongs = async (limit) => {
-  const [rows] = await db.query(
+  if (limit <= 0) {
+    return [];
+  }
+
+  const [[range]] = await db.query(
+    `
+    SELECT MIN(s.id) AS min_id, MAX(s.id) AS max_id
+    FROM songs s
+    WHERE s.is_deleted = 0
+      AND s.status = 'approved'
+      AND s.release_date IS NOT NULL
+      AND s.release_date <= NOW();
+  `
+  );
+
+  const minId = Number(range?.min_id) || 0;
+  const maxId = Number(range?.max_id) || 0;
+
+  if (!minId || !maxId || maxId < minId) {
+    return [];
+  }
+
+  const randomStart = Math.floor(Math.random() * (maxId - minId + 1)) + minId;
+
+  const [primaryRows] = await db.query(
     `
     SELECT
       s.id,
@@ -141,13 +186,42 @@ const getColdStartRandomSongs = async (limit) => {
       AND s.status = 'approved'
       AND s.release_date IS NOT NULL
       AND s.release_date <= NOW()
-    ORDER BY RAND()
+      AND s.id >= ?
+    ORDER BY s.id ASC
     LIMIT ?;
   `,
-    [limit]
+    [randomStart, limit]
   );
 
-  return rows;
+  if (primaryRows.length >= limit) {
+    return primaryRows;
+  }
+
+  const [remainingRows] = await db.query(
+    `
+    SELECT
+      s.id,
+      s.title,
+      s.artist_id,
+      ar.name AS artist_name,
+      s.cover_url,
+      s.play_count,
+      s.release_date,
+      'explore' AS source
+    FROM songs s
+    LEFT JOIN artists ar ON ar.id = s.artist_id
+    WHERE s.is_deleted = 0
+      AND s.status = 'approved'
+      AND s.release_date IS NOT NULL
+      AND s.release_date <= NOW()
+      AND s.id < ?
+    ORDER BY s.id ASC
+    LIMIT ?;
+  `,
+    [randomStart, limit - primaryRows.length]
+  );
+
+  return [...primaryRows, ...remainingRows];
 };
 
 const scoreColdStartItem = (song) => {
@@ -176,6 +250,11 @@ const mapColdStartResult = (song) => ({
 
 export const getColdStartRecommendations = async (limit = DEFAULT_LIMIT) => {
   const normalizedLimit = normalizeLimit(limit);
+  const cached = getCachedColdStart(normalizedLimit);
+  if (cached) {
+    return cached;
+  }
+
   const candidateLimit = normalizedLimit * COLD_START_CANDIDATE_MULTIPLIER;
 
   const [popularSongs, freshSongs, randomSongs] = await Promise.all([
@@ -214,6 +293,7 @@ export const getColdStartRecommendations = async (limit = DEFAULT_LIMIT) => {
     }
   }
 
+  setCachedColdStart(normalizedLimit, selected);
   return selected;
 };
 

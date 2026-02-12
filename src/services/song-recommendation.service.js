@@ -58,6 +58,14 @@ const MAX_PER_ARTIST = parsePositiveInt(
 
 // history filter
 const RECENT_HOURS = parsePositiveInt(process.env.SIMILAR_RECENT_HOURS, 2);
+const PRESELECT_CANDIDATES = parsePositiveInt(
+  process.env.SIMILAR_PRESELECT_CANDIDATES,
+  1200
+);
+const CACHE_TTL_MS = parsePositiveInt(
+  process.env.SIMILAR_CACHE_TTL_MS,
+  2 * 60 * 1000
+);
 
 // quality gates
 const MIN_AUDIO_SIM = parseNonNegativeNumber(process.env.SIMILAR_MIN_AUDIO_SIM, 0.2);
@@ -129,6 +137,27 @@ const BROAD_GENRE_KEYWORDS = [
   "thái lan",
   "thai lan",
 ];
+
+const similarSongsCache = new Map();
+
+const getCachedSimilarSongs = (cacheKey) => {
+  const item = similarSongsCache.get(cacheKey);
+  if (!item) return null;
+
+  if (item.expiresAt > Date.now()) {
+    return item.data;
+  }
+
+  similarSongsCache.delete(cacheKey);
+  return null;
+};
+
+const setCachedSimilarSongs = (cacheKey, data) => {
+  similarSongsCache.set(cacheKey, {
+    data,
+    expiresAt: Date.now() + CACHE_TTL_MS,
+  });
+};
 
 /**
  * =========================
@@ -297,7 +326,7 @@ const getQuerySong = async (songId) => {
  * =========================
  */
 
-const getAllCandidates = async (songId, userId) => {
+const getAllCandidates = async (songId, userId, querySong) => {
   const [rows] = await db.query(
     `
     SELECT
@@ -305,9 +334,22 @@ const getAllCandidates = async (songId, userId) => {
       s.title,
       s.artist_id,
       s.album_id,
+      s.play_count,
       GROUP_CONCAT(DISTINCT g.name) AS genres,
       ae.vector AS audio_vector,
-      me.vector AS meta_vector
+      me.vector AS meta_vector,
+      CASE WHEN s.artist_id = ? THEN 1 ELSE 0 END AS same_artist,
+      CASE WHEN s.album_id = ? THEN 1 ELSE 0 END AS same_album,
+      CASE
+        WHEN EXISTS (
+          SELECT 1
+          FROM song_genres source_sg
+          JOIN song_genres candidate_sg ON candidate_sg.genre_id = source_sg.genre_id
+          WHERE source_sg.song_id = ?
+            AND candidate_sg.song_id = s.id
+          LIMIT 1
+        ) THEN 1 ELSE 0
+      END AS shares_genre
     FROM songs s
     LEFT JOIN song_genres sg ON sg.song_id = s.id
     LEFT JOIN genres g ON g.id = sg.genre_id
@@ -325,9 +367,23 @@ const getAllCandidates = async (songId, userId) => {
         )
       )
     GROUP BY s.id, s.title, s.artist_id, s.album_id, ae.vector, me.vector
-    ORDER BY s.id ASC
+    ORDER BY same_artist DESC,
+      same_album DESC,
+      shares_genre DESC,
+      s.play_count DESC,
+      s.id ASC
+    LIMIT ?
     `,
-    [songId, userId, userId, RECENT_HOURS]
+    [
+      querySong.artist_id || null,
+      querySong.album_id || null,
+      songId,
+      songId,
+      userId,
+      userId,
+      RECENT_HOURS,
+      PRESELECT_CANDIDATES,
+    ]
   );
 
   return rows.map((r) => ({
@@ -335,6 +391,7 @@ const getAllCandidates = async (songId, userId) => {
     title: r.title,
     artistId: r.artist_id,
     albumId: r.album_id,
+    playCount: Number(r.play_count) || 0,
     genreSet: new Set(parseGenreString(r.genres)),
     audioVec: parseVector(r.audio_vector),
     metaVec: parseVector(r.meta_vector),
@@ -438,6 +495,12 @@ const getFallbackCandidates = async (query, excludeSongId, limit) => {
  */
 
 export const getSimilarSongs = async (songId, userId = null) => {
+  const cacheKey = `${songId}:${userId || "anon"}`;
+  const cached = getCachedSimilarSongs(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   const query = await getQuerySong(songId);
   if (!query) {
     const err = new Error("Song not found");
@@ -445,7 +508,7 @@ export const getSimilarSongs = async (songId, userId = null) => {
     throw err;
   }
 
-  const candidates = await getAllCandidates(songId, userId);
+  const candidates = await getAllCandidates(songId, userId, query.song);
 
   /**
    * === STAGE 1: AUDIO RANKING
@@ -503,7 +566,9 @@ export const getSimilarSongs = async (songId, userId = null) => {
   });
 
   if (!mergedMap.size) {
-    return getFallbackCandidates(query, songId, FINAL_RESULTS);
+    const fallbackOnly = await getFallbackCandidates(query, songId, FINAL_RESULTS);
+    setCachedSimilarSongs(cacheKey, fallbackOnly);
+    return fallbackOnly;
   }
 
   /**
@@ -568,8 +633,12 @@ export const getSimilarSongs = async (songId, userId = null) => {
   }
 
   if (!finalResults.length) {
-    return getFallbackCandidates(query, songId, FINAL_RESULTS);
+    const fallbackOnly = await getFallbackCandidates(query, songId, FINAL_RESULTS);
+    setCachedSimilarSongs(cacheKey, fallbackOnly);
+    return fallbackOnly;
   }
+
+  setCachedSimilarSongs(cacheKey, finalResults);
 
   return finalResults;
 };
