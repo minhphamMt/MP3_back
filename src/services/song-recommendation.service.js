@@ -48,6 +48,7 @@ const W_ALBUM_BONUS = parseNonNegativeNumber(
   process.env.SIMILAR_WEIGHT_ALBUM_BONUS,
   0.1
 );
+const W_GENRE = parseNonNegativeNumber(process.env.SIMILAR_WEIGHT_GENRE, 0.35);
 
 // diversity
 const MAX_PER_ARTIST = parsePositiveInt(
@@ -57,6 +58,77 @@ const MAX_PER_ARTIST = parsePositiveInt(
 
 // history filter
 const RECENT_HOURS = parsePositiveInt(process.env.SIMILAR_RECENT_HOURS, 2);
+
+// quality gates
+const MIN_AUDIO_SIM = parseNonNegativeNumber(process.env.SIMILAR_MIN_AUDIO_SIM, 0.2);
+const MIN_META_SIM = parseNonNegativeNumber(process.env.SIMILAR_MIN_META_SIM, 0.15);
+const MIN_FINAL_SCORE = parseNonNegativeNumber(
+  process.env.SIMILAR_MIN_FINAL_SCORE,
+  0.3
+);
+
+const WEAK_GENRE_WEIGHT = parseNonNegativeNumber(
+  process.env.SIMILAR_WEAK_GENRE_WEIGHT,
+  0.25
+);
+const STRONG_GENRE_WEIGHT = parseNonNegativeNumber(
+  process.env.SIMILAR_STRONG_GENRE_WEIGHT,
+  1
+);
+const STRONG_GENRE_OVERLAP_MIN_WEIGHT = parseNonNegativeNumber(
+  process.env.SIMILAR_STRONG_GENRE_OVERLAP_MIN_WEIGHT,
+  0.8
+);
+
+const STYLE_GENRE_KEYWORDS = [
+  "rap",
+  "hip hop",
+  "hiphop",
+  "r&b",
+  "rb",
+  "pop",
+  "rock",
+  "edm",
+  "house",
+  "techno",
+  "ballad",
+  "indie",
+  "acoustic",
+  "jazz",
+  "blues",
+  "bolero",
+  "dance",
+  "remix",
+  "folk",
+  "lofi",
+  "metal",
+  "trữ tình",
+  "cải lương",
+];
+
+const BROAD_GENRE_KEYWORDS = [
+  "việt nam",
+  "viet nam",
+  "vietnam",
+  "nhạc việt",
+  "nhac viet",
+  "quốc tế",
+  "quoc te",
+  "international",
+  "us-uk",
+  "âu mỹ",
+  "au my",
+  "châu á",
+  "chau a",
+  "hàn quốc",
+  "han quoc",
+  "trung quốc",
+  "trung quoc",
+  "nhật bản",
+  "nhat ban",
+  "thái lan",
+  "thai lan",
+];
 
 /**
  * =========================
@@ -91,6 +163,85 @@ export const cosineSimilarity = (a, b) => {
   return dot / (Math.sqrt(na) * Math.sqrt(nb));
 };
 
+const normalizeGenre = (genre) =>
+  String(genre || "")
+    .trim()
+    .toLowerCase();
+
+const parseGenreString = (genreString) =>
+  genreString
+    ? String(genreString)
+        .split(",")
+        .map((genre) => normalizeGenre(genre))
+        .filter(Boolean)
+    : [];
+
+const getGenreWeight = (genre) => {
+  const normalized = normalizeGenre(genre);
+  if (!normalized) return 0;
+
+  const hasStyleKeyword = STYLE_GENRE_KEYWORDS.some((keyword) =>
+    normalized.includes(keyword)
+  );
+
+  if (hasStyleKeyword) {
+    return STRONG_GENRE_WEIGHT;
+  }
+
+  const isBroadGenre = BROAD_GENRE_KEYWORDS.some((keyword) =>
+    normalized.includes(keyword)
+  );
+
+  if (isBroadGenre) {
+    return WEAK_GENRE_WEIGHT;
+  }
+
+  return 0.7;
+};
+
+const calculateWeightedGenreSimilarity = (setA, setB) => {
+  if (!setA.size || !setB.size) {
+    return {
+      similarity: 0,
+      hasStrongOverlap: false,
+    };
+  }
+
+  const union = new Set([...setA, ...setB]);
+  let numerator = 0;
+  let denominator = 0;
+  let hasStrongOverlap = false;
+
+  for (const genre of union) {
+    const weight = getGenreWeight(genre);
+    const inA = setA.has(genre);
+    const inB = setB.has(genre);
+
+    if (inA && inB) {
+      numerator += weight;
+      if (weight >= STRONG_GENRE_OVERLAP_MIN_WEIGHT) {
+        hasStrongOverlap = true;
+      }
+    }
+
+    if (inA || inB) {
+      denominator += weight;
+    }
+  }
+
+  if (!denominator) {
+    return {
+      similarity: 0,
+      hasStrongOverlap,
+    };
+  }
+
+  return {
+    similarity: numerator / denominator,
+    hasStrongOverlap,
+  };
+};
+
 /**
  * =========================
  * LOAD QUERY SONG
@@ -100,11 +251,19 @@ export const cosineSimilarity = (a, b) => {
 const getQuerySong = async (songId) => {
   const [[song]] = await db.query(
     `
-    SELECT id, title, artist_id, album_id
-    FROM songs
-    WHERE id = ?
-      AND status = 'approved'
-      AND is_deleted = 0
+    SELECT
+      s.id,
+      s.title,
+      s.artist_id,
+      s.album_id,
+      GROUP_CONCAT(DISTINCT g.name) AS genres
+    FROM songs s
+    LEFT JOIN song_genres sg ON sg.song_id = s.id
+    LEFT JOIN genres g ON g.id = sg.genre_id
+    WHERE s.id = ?
+      AND s.status = 'approved'
+      AND s.is_deleted = 0
+    GROUP BY s.id, s.title, s.artist_id, s.album_id
     LIMIT 1
     `,
     [songId]
@@ -126,6 +285,7 @@ const getQuerySong = async (songId) => {
 
   return {
     song,
+    genreSet: new Set(parseGenreString(song.genres)),
     audioVec: audio ? parseVector(audio.vector) : null,
     metaVec: meta ? parseVector(meta.vector) : null,
   };
@@ -145,9 +305,12 @@ const getAllCandidates = async (songId, userId) => {
       s.title,
       s.artist_id,
       s.album_id,
+      GROUP_CONCAT(DISTINCT g.name) AS genres,
       ae.vector AS audio_vector,
       me.vector AS meta_vector
     FROM songs s
+    LEFT JOIN song_genres sg ON sg.song_id = s.id
+    LEFT JOIN genres g ON g.id = sg.genre_id
     LEFT JOIN song_embeddings ae ON ae.song_id = s.id AND ae.type = 'audio'
     LEFT JOIN song_embeddings me ON me.song_id = s.id AND me.type = 'metadata'
     WHERE s.id != ?
@@ -161,6 +324,7 @@ const getAllCandidates = async (songId, userId) => {
             AND listened_at >= NOW() - INTERVAL ? HOUR
         )
       )
+    GROUP BY s.id, s.title, s.artist_id, s.album_id, ae.vector, me.vector
     ORDER BY s.id ASC
     `,
     [songId, userId, userId, RECENT_HOURS]
@@ -171,12 +335,13 @@ const getAllCandidates = async (songId, userId) => {
     title: r.title,
     artistId: r.artist_id,
     albumId: r.album_id,
+    genreSet: new Set(parseGenreString(r.genres)),
     audioVec: parseVector(r.audio_vector),
     metaVec: parseVector(r.meta_vector),
   }));
 };
 
-const getFallbackCandidates = async (song, excludeSongId, limit) => {
+const getFallbackCandidates = async (query, excludeSongId, limit) => {
   const safeLimit = parsePositiveInt(limit, FINAL_RESULTS);
   const [rows] = await db.query(
     `
@@ -186,23 +351,64 @@ const getFallbackCandidates = async (song, excludeSongId, limit) => {
       s.artist_id,
       s.album_id,
       s.play_count,
+      GROUP_CONCAT(DISTINCT g.name) AS genres,
       CASE WHEN s.artist_id = ? THEN 1 ELSE 0 END AS same_artist,
       CASE WHEN s.album_id = ? THEN 1 ELSE 0 END AS same_album
     FROM songs s
+    LEFT JOIN song_genres sg ON sg.song_id = s.id
+    LEFT JOIN genres g ON g.id = sg.genre_id
     WHERE s.id != ?
       AND s.status = 'approved'
       AND s.is_deleted = 0
-    ORDER BY same_artist DESC, same_album DESC, s.play_count DESC
+    GROUP BY s.id, s.title, s.artist_id, s.album_id, s.play_count
     ORDER BY same_artist DESC, same_album DESC, s.play_count DESC, s.id ASC
     LIMIT ?;
     `,
-    [song.artist_id || null, song.album_id || null, excludeSongId, safeLimit * 3]
+    [
+      query.song.artist_id || null,
+      query.song.album_id || null,
+      excludeSongId,
+      safeLimit * 5,
+    ]
   );
 
   const artistCount = {};
   const selected = [];
 
-  for (const row of rows) {
+  const rankedRows = rows
+    .map((row) => {
+      const genreSignal = calculateWeightedGenreSimilarity(
+        query.genreSet,
+        new Set(parseGenreString(row.genres))
+      );
+      const fallbackScore =
+        row.same_artist * W_ARTIST_BONUS +
+        row.same_album * W_ALBUM_BONUS +
+        genreSignal.similarity * W_GENRE;
+
+      return {
+        ...row,
+        fallbackScore,
+        hasStrongGenreOverlap: genreSignal.hasStrongOverlap,
+      };
+    })
+    .sort((a, b) => {
+      if (b.fallbackScore !== a.fallbackScore) {
+        return b.fallbackScore - a.fallbackScore;
+      }
+      return b.play_count - a.play_count || a.id - b.id;
+    });
+
+  for (const row of rankedRows) {
+    if (
+      query.genreSet.size &&
+      !row.same_artist &&
+      !row.hasStrongGenreOverlap &&
+      row.fallbackScore < MIN_FINAL_SCORE
+    ) {
+      continue;
+    }
+
     artistCount[row.artist_id] = artistCount[row.artist_id] || 0;
     if (artistCount[row.artist_id] >= MAX_PER_ARTIST) {
       continue;
@@ -213,7 +419,7 @@ const getFallbackCandidates = async (song, excludeSongId, limit) => {
       songId: row.id,
       title: row.title,
       score: Number(
-        (row.same_artist * W_ARTIST_BONUS + row.same_album * W_ALBUM_BONUS).toFixed(6)
+        row.fallbackScore.toFixed(6)
       ),
     });
 
@@ -252,6 +458,7 @@ export const getSimilarSongs = async (songId, userId = null) => {
             ? cosineSimilarity(query.audioVec, c.audioVec)
             : 0,
         }))
+        .filter((c) => c.audioSim >= MIN_AUDIO_SIM)
         .sort((a, b) => b.audioSim - a.audioSim || a.id - b.id)
         .slice(0, AUDIO_CANDIDATES)
     : [];
@@ -267,6 +474,7 @@ export const getSimilarSongs = async (songId, userId = null) => {
             ? cosineSimilarity(query.metaVec, c.metaVec)
             : 0,
         }))
+        .filter((c) => c.metaSim >= MIN_META_SIM)
         .sort((a, b) => b.metaSim - a.metaSim || a.id - b.id)
         .slice(0, META_CANDIDATES)
     : [];
@@ -295,7 +503,7 @@ export const getSimilarSongs = async (songId, userId = null) => {
   });
 
   if (!mergedMap.size) {
-    return getFallbackCandidates(query.song, songId, FINAL_RESULTS);
+    return getFallbackCandidates(query, songId, FINAL_RESULTS);
   }
 
   /**
@@ -315,14 +523,28 @@ export const getSimilarSongs = async (songId, userId = null) => {
         score += W_ALBUM_BONUS;
       }
 
+      const genreSignal = calculateWeightedGenreSimilarity(
+        query.genreSet,
+        c.genreSet
+      );
+      score += genreSignal.similarity * W_GENRE;
+
       return {
         songId: c.id,
         title: c.title,
         artistId: c.artistId,
         albumId: c.albumId,
+        genreSim: genreSignal.similarity,
+        hasStrongGenreOverlap: genreSignal.hasStrongOverlap,
         score,
       };
     })
+    .filter(
+      (item) =>
+        item.score >= MIN_FINAL_SCORE ||
+        item.hasStrongGenreOverlap ||
+        item.artistId === query.song.artist_id
+    )
     .sort((a, b) => b.score - a.score || a.songId - b.songId);
 
   /**
@@ -343,6 +565,10 @@ export const getSimilarSongs = async (songId, userId = null) => {
     });
 
     if (finalResults.length >= FINAL_RESULTS) break;
+  }
+
+  if (!finalResults.length) {
+    return getFallbackCandidates(query, songId, FINAL_RESULTS);
   }
 
   return finalResults;
