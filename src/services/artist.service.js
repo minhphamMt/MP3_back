@@ -512,8 +512,8 @@ export const listArtistCollections = async (limit = 8) => {
     `
     SELECT
       a.id AS artist_id,
-      a.name AS artist_name,
-      a.avatar_url AS cover_url,
+      ANY_VALUE(a.name) AS artist_name,
+      ANY_VALUE(a.avatar_url) AS cover_url,
       COUNT(s.id) AS song_count
     FROM artists a
     JOIN songs s ON s.artist_id = a.id

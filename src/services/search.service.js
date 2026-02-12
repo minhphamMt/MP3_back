@@ -101,11 +101,29 @@ const searchArtists = async (keyword, { limit, offset, includeDeleted }) => {
   const [rows] = await db.query(
     `
     SELECT
-      a.*,
+      a.id,
+      ANY_VALUE(a.user_id) AS user_id,
+      ANY_VALUE(a.name) AS name,
+      ANY_VALUE(a.alias) AS alias,
+      ANY_VALUE(a.bio) AS bio,
+      ANY_VALUE(a.short_bio) AS short_bio,
+      ANY_VALUE(a.avatar_url) AS avatar_url,
+      ANY_VALUE(a.cover_url) AS cover_url,
+      ANY_VALUE(a.birthday) AS birthday,
+      ANY_VALUE(a.realname) AS realname,
+      ANY_VALUE(a.national) AS national,
+      ANY_VALUE(a.follow_count) AS follow_count,
+      ANY_VALUE(a.zing_artist_id) AS zing_artist_id,
+      ANY_VALUE(a.is_deleted) AS is_deleted,
+      ANY_VALUE(a.deleted_at) AS deleted_at,
+      ANY_VALUE(a.deleted_by) AS deleted_by,
+      ANY_VALUE(a.deleted_by_role) AS deleted_by_role,
+      ANY_VALUE(a.created_at) AS created_at,
+      ANY_VALUE(a.updated_at) AS updated_at,
       COUNT(s.id) AS song_count,
-      (a.name LIKE ?) * 5 +
-      (a.name LIKE ?) * 3 +
-      (a.follow_count * 0.01) AS score
+      (ANY_VALUE(a.name) LIKE ?) * 5 +
+      (ANY_VALUE(a.name) LIKE ?) * 3 +
+      (ANY_VALUE(a.follow_count) * 0.01) AS score
     FROM artists a
     LEFT JOIN songs s
       ON s.artist_id = a.id

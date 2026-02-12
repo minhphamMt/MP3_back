@@ -90,13 +90,13 @@ export const getFollowedArtists = async (userId) => {
     `
     SELECT
       a.id,
-      a.name,
-      a.alias,
-      a.short_bio,
-      a.avatar_url,
-      a.cover_url,
-      a.national,
-      a.follow_count,
+      ANY_VALUE(a.name) AS name,
+      ANY_VALUE(a.alias) AS alias,
+      ANY_VALUE(a.short_bio) AS short_bio,
+      ANY_VALUE(a.avatar_url) AS avatar_url,
+      ANY_VALUE(a.cover_url) AS cover_url,
+      ANY_VALUE(a.national) AS national,
+      ANY_VALUE(a.follow_count) AS follow_count,
       af.followed_at,
 
       COUNT(s.id) AS song_count

@@ -155,9 +155,9 @@ export const getTopSongsAnalytics = async ({
     `
     SELECT
       lh.song_id,
-      s.title,
-      s.artist_id,
-      ar.name AS artist_name,
+      ANY_VALUE(s.title) AS title,
+      ANY_VALUE(s.artist_id) AS artist_id,
+      ANY_VALUE(ar.name) AS artist_name,
       COUNT(*) AS total_plays,
       COALESCE(SUM(lh.duration), 0) AS total_duration
     FROM listening_history lh
@@ -245,7 +245,7 @@ export const getTopArtistsAnalytics = async ({
     `
     SELECT
       s.artist_id,
-      ar.name AS artist_name,
+      ANY_VALUE(ar.name) AS artist_name,
      COUNT(*) AS total_plays,
       COALESCE(SUM(lh.duration), 0) AS total_duration
     FROM listening_history lh
@@ -328,7 +328,7 @@ export const getTopGenresAnalytics = async ({
     `
     SELECT
       g.id AS genre_id,
-      g.name AS genre_name,
+      ANY_VALUE(g.name) AS genre_name,
       COUNT(*) AS total_plays,
       COALESCE(SUM(lh.duration), 0) AS total_duration
     FROM listening_history lh

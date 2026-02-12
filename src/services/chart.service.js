@@ -161,17 +161,17 @@ export const getRegionChart = async (regionKey, limit = 5) => {
     `
     SELECT
       s.id,
-      s.title,
-      s.duration,
-      s.play_count,
-      s.cover_url,
+      ANY_VALUE(s.title) AS title,
+      ANY_VALUE(s.duration) AS duration,
+      ANY_VALUE(s.play_count) AS play_count,
+      ANY_VALUE(s.cover_url) AS cover_url,
 
-      ar.id AS artist_id,
-      ar.name AS artist_name,
+      ANY_VALUE(ar.id) AS artist_id,
+      ANY_VALUE(ar.name) AS artist_name,
 
-      s.album_id,
-      al.title AS album_title,
-      al.cover_url AS album_cover_url
+      ANY_VALUE(s.album_id) AS album_id,
+      ANY_VALUE(al.title) AS album_title,
+      ANY_VALUE(al.cover_url) AS album_cover_url
     FROM songs s
     JOIN song_genres sg ON sg.song_id = s.id
     JOIN genres g ON g.id = sg.genre_id
@@ -312,7 +312,7 @@ export const getTop50SongsByGenres = async () => {
   const [genres] = await db.query(`
     SELECT
       g.id,
-      g.name,
+      ANY_VALUE(g.name) AS name,
       COUNT(sg.song_id) AS song_count
     FROM genres g
     JOIN song_genres sg ON sg.genre_id = g.id
