@@ -29,10 +29,11 @@ const buildPublicUrl = (key) => {
   }
 
   if (storageConfig.driver === "gcs") {
-  const encodedPath = encodeURIComponent(key);
-  return `https://firebasestorage.googleapis.com/v0/b/${storageConfig.gcs.bucket}/o/${encodedPath}?alt=media`;
-}
-
+    // Firebase Storage public media URL
+    // IMPORTANT: Firebase expects slashes preserved, so we encode but keep "/" intact.
+    const encodedPath = encodeURIComponent(key).replace(/%2F/g, "/");
+    return `https://firebasestorage.googleapis.com/v0/b/${storageConfig.gcs.bucket}/o/${encodedPath}?alt=media`;
+  }
 
   return key;
 };
@@ -50,12 +51,41 @@ if (storageConfig.driver === "s3") {
   });
 }
 
-if (storageConfig.driver === "gcs") {
+const getGcsClient = () => {
+  if (gcsClient) return gcsClient;
+
+  if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    throw new Error(
+      "Missing FIREBASE_SERVICE_ACCOUNT_JSON. Required for GCS on Render."
+    );
+  }
+
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  } catch {
+    throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON.");
+  }
+
+  if (!serviceAccount?.client_email || !serviceAccount?.private_key) {
+    throw new Error(
+      "FIREBASE_SERVICE_ACCOUNT_JSON missing client_email/private_key."
+    );
+  }
+
+  // Render often stores \n as \\n
+  const privateKey = serviceAccount.private_key.replace(/\\n/g, "\n");
+
   gcsClient = new Storage({
-    projectId: storageConfig.gcs.projectId,
-    keyFilename: storageConfig.gcs.keyFilename,
+    projectId: serviceAccount.project_id || storageConfig.gcs.projectId,
+    credentials: {
+      client_email: serviceAccount.client_email,
+      private_key: privateKey,
+    },
   });
-}
+
+  return gcsClient;
+};
 
 const normalizeKeyForDriver = (key) => {
   const trimmed = key.replace(/^\/+/, "");
@@ -104,12 +134,7 @@ export const generateFileName = ({ prefix, ownerId, originalName }) => {
   return `${prefix}-${safeOwnerId}-${Date.now()}${ext}`;
 };
 
-export const uploadMediaFile = async ({
-  folder,
-  file,
-  prefix,
-  ownerId,
-}) => {
+export const uploadMediaFile = async ({ folder, file, prefix, ownerId }) => {
   if (!file) {
     return null;
   }
@@ -159,17 +184,20 @@ export const uploadBuffer = async ({ key, buffer, contentType }) => {
   }
 
   if (storageConfig.driver === "gcs") {
-    if (!storageConfig.gcs.bucket || !storageConfig.gcs.projectId) {
-      throw new Error("GCS bucket and projectId are required for GCS storage");
+    if (!storageConfig.gcs.bucket) {
+      throw new Error("GCS bucket is required for GCS storage");
     }
 
-    const bucket = gcsClient.bucket(storageConfig.gcs.bucket);
+    const client = getGcsClient();
+    const bucket = client.bucket(storageConfig.gcs.bucket);
     const file = bucket.file(normalizedKey);
 
     await file.save(buffer, {
       resumable: false,
       contentType,
     });
+
+    // Make it public like your original logic
     await file.makePublic();
 
     return {
@@ -179,6 +207,7 @@ export const uploadBuffer = async ({ key, buffer, contentType }) => {
     };
   }
 
+  // local
   const fullPath = path.join(storageConfig.local.uploadDir, normalizedKey);
   await ensureDirectory(path.dirname(fullPath));
   await fs.promises.writeFile(fullPath, buffer);
@@ -226,12 +255,14 @@ export const createUploadTarget = async ({
   }
 
   if (storageConfig.driver === "gcs") {
-    if (!storageConfig.gcs.bucket || !storageConfig.gcs.projectId) {
-      throw new Error("GCS bucket and projectId are required for GCS storage");
+    if (!storageConfig.gcs.bucket) {
+      throw new Error("GCS bucket is required for GCS storage");
     }
 
-    const bucket = gcsClient.bucket(storageConfig.gcs.bucket);
+    const client = getGcsClient();
+    const bucket = client.bucket(storageConfig.gcs.bucket);
     const file = bucket.file(key);
+
     const [uploadUrl] = await file.getSignedUrl({
       version: "v4",
       action: "write",
