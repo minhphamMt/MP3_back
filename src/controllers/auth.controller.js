@@ -1,5 +1,6 @@
 import {
   loginUser,
+  logoutUser,
   refreshTokens,
   registerUser,
   requestPasswordReset,
@@ -90,6 +91,15 @@ export const refresh = async (req, res, next) => {
   }
 };
 
+export const logout = async (req, res, next) => {
+  try {
+    const result = await logoutUser(req.body.refreshToken);
+    return res.json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 export const forgotPassword = async (req, res, next) => {
   try {
     const result = await requestPasswordReset(req.body);
@@ -114,6 +124,7 @@ export default {
   verifyEmailFromLink,
   resendVerification,
   login,
+  logout,
   refresh,
   forgotPassword,
   confirmResetPassword,

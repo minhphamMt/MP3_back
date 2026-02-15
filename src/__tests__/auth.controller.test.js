@@ -7,6 +7,7 @@ const loadApp = async () => {
   jest.unstable_mockModule("../services/auth.service.js", () => ({
     registerUser: jest.fn(),
     loginUser: jest.fn(),
+    logoutUser: jest.fn(),
     refreshTokens: jest.fn(),
     resendVerificationEmail: jest.fn(),
     verifyEmailRegistration: mockVerifyEmailRegistration,

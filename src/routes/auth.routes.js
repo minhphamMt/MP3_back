@@ -5,6 +5,7 @@ import {
   firebaseLoginSchema,
   forgotPasswordSchema,
   loginSchema,
+  logoutSchema,
   refreshSchema,
   registerSchema,
   resetPasswordSchema,
@@ -35,6 +36,7 @@ router.post("/firebase", validate(firebaseLoginSchema), authController.firebaseL
 router.post("/login", validate(loginSchema), authController.login);
 router.post("/artist/login", validate(loginSchema), authController.loginArtist);
 router.post("/refresh", validate(refreshSchema), authController.refresh);
+router.post("/logout", validate(logoutSchema), authController.logout);
 router.post(
   "/forgot-password",
   validate(forgotPasswordSchema),

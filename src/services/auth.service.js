@@ -13,6 +13,26 @@ const EMAIL_VERIFY_EXPIRES_MINUTES = Number(
 const PASSWORD_RESET_EXPIRES_MINUTES = Number(
   process.env.PASSWORD_RESET_EXPIRES_MINUTES || 15
 );
+const revokedRefreshTokens = new Map();
+
+const cleanupRevokedRefreshTokens = () => {
+  const now = Date.now();
+  for (const [tokenHash, expiresAt] of revokedRefreshTokens.entries()) {
+    if (expiresAt <= now) {
+      revokedRefreshTokens.delete(tokenHash);
+    }
+  }
+};
+
+const revokeRefreshToken = (refreshToken, expiresAtUnixSeconds) => {
+  if (!refreshToken || !expiresAtUnixSeconds) return;
+  revokedRefreshTokens.set(hashToken(refreshToken), expiresAtUnixSeconds * 1000);
+};
+
+const isRefreshTokenRevoked = (refreshToken) => {
+  cleanupRevokedRefreshTokens();
+  return revokedRefreshTokens.has(hashToken(refreshToken));
+};
 
 export const firebaseLoginUser = async ({ idToken }) => {
   if (!idToken) {
@@ -108,7 +128,7 @@ const generateTokens = (user) => {
   };
 
   const accessToken = jwt.sign(payload, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN || "5h",
+    expiresIn: process.env.JWT_EXPIRES_IN || "7d",
   });
 
   const refreshSecret = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
@@ -475,6 +495,11 @@ export const refreshTokens = async (refreshToken) => {
 
   try {
     const decoded = jwt.verify(refreshToken, refreshSecret);
+
+    if (isRefreshTokenRevoked(refreshToken)) {
+      throw createError(401, "Refresh token has been revoked");
+    }
+
     const [rows] = await db.query("SELECT * FROM users WHERE id = ?", [decoded.id]);
     const user = rows[0];
 
@@ -486,6 +511,8 @@ export const refreshTokens = async (refreshToken) => {
       throw createError(403, "Account is disabled");
     }
 
+    revokeRefreshToken(refreshToken, decoded.exp);
+
     const tokens = generateTokens(user);
     return { user: sanitizeUser(user), ...tokens };
   } catch (error) {
@@ -494,12 +521,30 @@ export const refreshTokens = async (refreshToken) => {
   }
 };
 
+export const logoutUser = async (refreshToken) => {
+  if (!refreshToken) {
+    throw createError(400, "Refresh token is required");
+  }
+
+  const refreshSecret = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
+
+  try {
+    const decoded = jwt.verify(refreshToken, refreshSecret);
+    revokeRefreshToken(refreshToken, decoded.exp);
+  } catch {
+    throw createError(401, "Invalid or expired refresh token");
+  }
+
+  return { message: "Đăng xuất thành công" };
+};
+
 export default {
   registerUser,
   verifyEmailRegistration,
   resendVerificationEmail,
   loginUser,
   refreshTokens,
+  logoutUser,
   firebaseLoginUser,
   requestPasswordReset,
   resetPassword,

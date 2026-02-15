@@ -37,6 +37,12 @@ export const refreshSchema = {
   },
 };
 
+export const logoutSchema = {
+  body: {
+    refreshToken: { type: "string", required: true },
+  },
+};
+
 export const firebaseLoginSchema = {
   body: {
     idToken: { type: "string", required: true },
@@ -68,6 +74,7 @@ export default {
   resendVerificationSchema,
   loginSchema,
   refreshSchema,
+  logoutSchema,
   firebaseLoginSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
