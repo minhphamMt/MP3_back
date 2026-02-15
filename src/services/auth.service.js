@@ -198,6 +198,7 @@ export const registerUser = async ({
     email,
     displayName,
     verificationCode,
+    expiresInMinutes: EMAIL_VERIFY_EXPIRES_MINUTES,
   });
 
   return {
@@ -340,6 +341,7 @@ export const resendVerificationEmail = async ({ email }) => {
     email,
     displayName: verification.display_name,
     verificationCode,
+    expiresInMinutes: EMAIL_VERIFY_EXPIRES_MINUTES,
   });
 
   return {
@@ -403,6 +405,7 @@ export const requestPasswordReset = async ({ email }) => {
     email,
     displayName: user.display_name || user.email,
     verificationCode,
+    expiresInMinutes: PASSWORD_RESET_EXPIRES_MINUTES,
   });
 
   return { message: genericMessage };

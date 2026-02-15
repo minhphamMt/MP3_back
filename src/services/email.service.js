@@ -19,6 +19,21 @@ const detectTransportMode = () => {
 };
 
 const getFromAddress = () => process.env.MAIL_FROM || "no-reply@example.com";
+const getBrandName = () => process.env.BREVO_SENDER_NAME || "Music App";
+const getBrandAvatarUrl = () => process.env.EMAIL_BRAND_AVATAR_URL || "";
+
+const parseExpiryMinutes = (value, fallback) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const buildExpiryMessage = (minutes) => {
+  if (minutes <= 1) {
+    return "Mã có hiệu lực trong 1 phút.";
+  }
+
+  return `Mã có hiệu lực trong ${minutes} phút.`;
+};
 
 // Ép Gmail dùng IPv4 để tránh IPv6 ENETUNREACH trên một số môi trường (Render hay gặp)
 // Bạn có thể để SMTP_HOST=smtp.gmail.com và code sẽ tự ép sang IPv4
@@ -145,7 +160,7 @@ const sendWithBrevo = async ({ email, subject, text, html }) => {
   }
 };
 
-const sendEmail = async ({ email, displayName, verificationCode, kind }) => {
+const sendEmail = async ({ email, displayName, verificationCode, kind, expiresInMinutes }) => {
   const transportMode = detectTransportMode();
 
   const isVerification = kind === "verification";
@@ -155,12 +170,31 @@ const sendEmail = async ({ email, displayName, verificationCode, kind }) => {
     : "Mã đặt lại mật khẩu của bạn là";
 
   const safeName = displayName || "bạn";
-  const text = `Xin chào ${safeName},\n\n${actionText}: ${verificationCode}\n\nMã có hiệu lực trong thời gian giới hạn. Nếu không phải bạn, hãy bỏ qua email này.`;
+  const safeExpiresInMinutes = parseExpiryMinutes(
+    expiresInMinutes,
+    isVerification ? 30 : 15
+  );
+  const expiryMessage = buildExpiryMessage(safeExpiresInMinutes);
+  const reminderMessage = `${expiryMessage} Nếu không phải bạn, hãy bỏ qua email này.`;
+  const brandName = getBrandName();
+  const brandAvatarUrl = getBrandAvatarUrl();
+
+  const text = `Xin chào ${safeName},\n\n${actionText}: ${verificationCode}\n\n${reminderMessage}`;
+  const avatarBlock = brandAvatarUrl
+    ? `<img src="${brandAvatarUrl}" alt="${brandName}" width="56" height="56" style="display:block;width:56px;height:56px;border-radius:50%;object-fit:cover;border:1px solid #e5e7eb" />`
+    : `<div style="width:56px;height:56px;border-radius:50%;background:#2563eb;color:#fff;font-size:22px;font-weight:700;line-height:56px;text-align:center;">${brandName.charAt(
+        0
+      )}</div>`;
+
   const html = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+      ${avatarBlock}
+      <div style="font-size:16px;font-weight:700;color:#111827">${brandName}</div>
+    </div>
     <p>Xin chào <strong>${safeName}</strong>,</p>
     <p>${actionText}:</p>
     <p style="font-size:28px;font-weight:700;letter-spacing:6px;color:#2563eb;margin:8px 0 12px;">${verificationCode}</p>
-    <p style="font-size:13px;color:#6b7280">Mã có hiệu lực trong thời gian giới hạn. Nếu không phải bạn, hãy bỏ qua email này.</p>
+    <p style="font-size:13px;color:#6b7280">${reminderMessage}</p>
   </div>`;
 
   try {
@@ -193,12 +227,34 @@ const sendEmail = async ({ email, displayName, verificationCode, kind }) => {
   }
 };
 
-export const sendVerificationEmail = async ({ email, displayName, verificationCode }) => {
-  await sendEmail({ email, displayName, verificationCode, kind: "verification" });
+export const sendVerificationEmail = async ({
+  email,
+  displayName,
+  verificationCode,
+  expiresInMinutes,
+}) => {
+  await sendEmail({
+    email,
+    displayName,
+    verificationCode,
+    kind: "verification",
+    expiresInMinutes,
+  });
 };
 
-export const sendPasswordResetEmail = async ({ email, displayName, verificationCode }) => {
-  await sendEmail({ email, displayName, verificationCode, kind: "password_reset" });
+export const sendPasswordResetEmail = async ({
+  email,
+  displayName,
+  verificationCode,
+  expiresInMinutes,
+}) => {
+  await sendEmail({
+    email,
+    displayName,
+    verificationCode,
+    kind: "password_reset",
+    expiresInMinutes,
+  });
 };
 
 export default {
