@@ -12,27 +12,30 @@ const defaultServiceAccountPath = path.resolve(
 );
 
 const parseServiceAccountJson = (rawValue, source) => {
-  if (!rawValue || typeof rawValue !== "string") {
-    return null;
-  }
+  if (!rawValue || typeof rawValue !== "string") return null;
 
   const normalizedValue = rawValue.trim();
 
+  const tryParse = (value) => {
+    const obj = JSON.parse(value);
+    if (obj?.private_key) {
+      obj.private_key = obj.private_key.replace(/\\n/g, "\n");
+    }
+    return obj;
+  };
+
   try {
-    return JSON.parse(normalizedValue);
+    return tryParse(normalizedValue);
   } catch {
     try {
-      return JSON.parse(normalizedValue.replace(/\\n/g, "\n"));
+      const decoded = Buffer.from(normalizedValue, "base64").toString("utf8");
+      return tryParse(decoded);
     } catch {
-      try {
-        const decoded = Buffer.from(normalizedValue, "base64").toString("utf8");
-        return JSON.parse(decoded);
-      } catch {
-        throw new Error(`Invalid Firebase service account JSON from ${source}.`);
-      }
+      throw new Error(`Invalid Firebase service account JSON from ${source}.`);
     }
   }
 };
+
 
 const resolveServiceAccountFromEnv = () => {
   const explicitKeys = [
