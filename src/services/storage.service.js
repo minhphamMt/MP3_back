@@ -29,11 +29,9 @@ const buildPublicUrl = (key) => {
   }
 
   if (storageConfig.driver === "gcs") {
-    // Firebase Storage public media URL
-    // IMPORTANT: Firebase expects slashes preserved, so we encode but keep "/" intact.
-    const encodedPath = encodeURIComponent(key).replace(/%2F/g, "/");
-    return `https://firebasestorage.googleapis.com/v0/b/${storageConfig.gcs.bucket}/o/${encodedPath}?alt=media`;
-  }
+  return `https://storage.googleapis.com/${storageConfig.gcs.bucket}/${key}`;
+}
+
 
   return key;
 };
