@@ -12,9 +12,39 @@ const defaultServiceAccountPath = path.resolve(
   "../../firebase-service-account.json"
 );
 
+const parseServiceAccountJson = (rawValue, source) => {
+  if (!rawValue || typeof rawValue !== "string") {
+    return null;
+  }
+
+  const normalizedValue = rawValue.trim();
+
+  try {
+    return JSON.parse(normalizedValue);
+  } catch {
+    // Render/env dashboards đôi khi lưu chuỗi JSON với xuống dòng bị escape (\n)
+    try {
+      return JSON.parse(normalizedValue.replace(/\\n/g, "\n"));
+    } catch {
+      // Cho phép truyền base64 để tránh lỗi escape ký tự đặc biệt
+      try {
+        const decoded = Buffer.from(normalizedValue, "base64").toString("utf8");
+        return JSON.parse(decoded);
+      } catch {
+        throw new Error(
+          `Invalid Firebase service account JSON from ${source}.`
+        );
+      }
+    }
+  }
+};
+
 const resolveServiceAccount = () => {
   if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-    return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    return parseServiceAccountJson(
+      process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
+      "FIREBASE_SERVICE_ACCOUNT_JSON"
+    );
   }
 
   const serviceAccountPath =
@@ -26,7 +56,10 @@ const resolveServiceAccount = () => {
     );
   }
 
-  return JSON.parse(fs.readFileSync(serviceAccountPath, "utf8"));
+  return parseServiceAccountJson(
+    fs.readFileSync(serviceAccountPath, "utf8"),
+    `file ${serviceAccountPath}`
+  );
 };
 
 const serviceAccount = resolveServiceAccount();
