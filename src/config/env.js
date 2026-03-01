@@ -13,7 +13,7 @@ const env = {
   embeddingServiceUrl: process.env.EMBEDDING_SERVICE_URL,
   frontendUrl: process.env.FRONTEND_URL,
   emailTransport:
-    process.env.EMAIL_TRANSPORT || (process.env.BREVO_API_KEY ? "brevo" : process.env.SMTP_HOST ? "smtp" : "log"),
+  process.env.EMAIL_TRANSPORT || (process.env.BREVO_API_KEY ? "brevo" : process.env.SMTP_HOST ? "smtp" : "log"),
   backendUrl: process.env.BACKEND_URL || process.env.API_BASE_URL,
   brevoApiKey: process.env.BREVO_API_KEY,
   brevoSenderEmail: process.env.BREVO_SENDER_EMAIL,
