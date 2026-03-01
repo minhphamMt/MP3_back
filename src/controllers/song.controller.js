@@ -1,5 +1,6 @@
 import {
   createSong,
+  deleteSong,
   softDeleteSong,
   restoreSong,
   getSongById,
@@ -372,22 +373,27 @@ export const uploadSongCover = async (req, res, next) => {
 
 export const deleteSongHandler = async (req, res, next) => {
   try {
+    const existingSong = await getSongById(req.params.id, {
+      includeUnreleased: true,
+      includeDeleted: true,
+    });
+    if (!existingSong) {
+      return errorResponse(res, "Song not found", 404);
+    }
+
     if (req.user?.role === ROLES.ARTIST) {
       const artist = await getArtistByUserId(req.user.id);
       if (!artist) {
         return errorResponse(res, "Artist profile not found", 403);
       }
-
-      const existingSong = await getSongById(req.params.id, {
-        includeUnreleased: true,
-        includeDeleted: true,
-      });
-      if (!existingSong) {
-        return errorResponse(res, "Song not found", 404);
-      }
       if (existingSong.artist_id !== artist.id) {
         return errorResponse(res, "Forbidden", 403);
       }
+    }
+
+    if (existingSong.is_deleted) {
+      await deleteSong(req.params.id);
+      return successResponse(res, { message: "Song permanently deleted" });
     }
 
     await softDeleteSong(req.params.id, {
