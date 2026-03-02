@@ -1,6 +1,7 @@
 import bcrypt from "bcrypt";
 import db from "../config/db.js";
 import ROLES from "../constants/roles.js";
+import { createArtist, getArtistByUserIdWithDeleted } from "./artist.service.js";
 
 const SALT_ROUNDS = 10;
 
@@ -14,6 +15,25 @@ const sanitizeUser = (user) => {
   if (!user) return null;
   const { password, password_hash, ...rest } = user;
   return rest;
+};
+
+const ensureArtistProfileForUser = async ({ userId, displayName }) => {
+  if (!userId) return;
+
+  const existingArtist = await getArtistByUserIdWithDeleted(userId);
+  if (existingArtist) {
+    if (existingArtist.is_deleted) {
+      await db.query("UPDATE artists SET is_deleted = 0 WHERE id = ?", [
+        existingArtist.id,
+      ]);
+    }
+    return;
+  }
+
+  await createArtist({
+    user_id: userId,
+    name: displayName,
+  });
 };
 
 export const getAllUsers = async () => {
@@ -65,6 +85,13 @@ export const createUser = async ({
      VALUES (?, ?, ?, ?, ?, ?)`,
     [displayName, email, hashedPassword, role, is_active ? 1 : 0, avatar_url || null]
   );
+
+  if (role === ROLES.ARTIST) {
+    await ensureArtistProfileForUser({
+      userId: result.insertId,
+      displayName,
+    });
+  }
 
   return getUserById(result.insertId);
 };
@@ -192,6 +219,15 @@ export const setUserRole = async (id, role) => {
   }
 
   await db.query("UPDATE users SET role = ? WHERE id = ?", [role, id]);
+
+  if (role === ROLES.ARTIST) {
+    const fullUser = await getUserById(id);
+    await ensureArtistProfileForUser({
+      userId: id,
+      displayName: fullUser?.display_name || `Artist ${id}`,
+    });
+  }
+
   return getUserById(id);
 };
 
