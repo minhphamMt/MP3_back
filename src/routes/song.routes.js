@@ -7,7 +7,7 @@ import { getLikedSongss } from "../controllers/song.controller.js";
 import {
   uploadSongAudio as uploadSongAudioFile,
   uploadSongCover,
-  uploadSongMedia,
+  parseSongMetadata,
 } from "../middlewares/upload.middleware.js";
 import rbacMiddleware from "../middlewares/rbac.middleware.js";
 import { getSongLyrics } from "../controllers/lyrics.controller.js";
@@ -23,14 +23,14 @@ router.post(
   "/",
   authMiddleware,
   rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
-  uploadSongMedia,
+  parseSongMetadata,
   songController.createSongHandler
 );
 router.put(
   "/:id",
   authMiddleware,
   rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
-  uploadSongMedia,
+  parseSongMetadata,
   songController.updateSongHandler
 );
 router.post(

@@ -70,3 +70,10 @@ export const uploadSongCover = createUploader({
   fileFilter: imageFileFilter,
   limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
 }).single("cover");
+
+export const parseSongMetadata = multer({
+  limits: {
+    fields: 50,
+    fieldSize: 2 * 1024 * 1024, // 2MB per text field
+  },
+}).none();

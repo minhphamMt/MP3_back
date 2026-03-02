@@ -22,6 +22,27 @@ import { getArtistByUserId, getArtistByUserIdWithDeleted } from "../services/art
 import { getAlbumById } from "../services/album.service.js";
 import { uploadMediaFile } from "../services/storage.service.js";
 
+const normalizeSongPayload = (body = {}) => {
+  const payload = { ...body };
+
+  if (payload.audio_url && payload.audio_path === undefined) {
+    payload.audio_path = payload.audio_url;
+  }
+
+  if (payload.cover && payload.cover_url === undefined) {
+    payload.cover_url = payload.cover;
+  }
+
+  if (payload.duration !== undefined && payload.duration !== null && payload.duration !== "") {
+    const parsedDuration = Number(payload.duration);
+    if (Number.isFinite(parsedDuration)) {
+      payload.duration = parsedDuration;
+    }
+  }
+
+  return payload;
+};
+
 const parseGenreQuery = (query) => query.genre || query.genres || [];
 const resolveIncludeUnreleased = async ({ user }, { artistId, albumId }) => {
   if (!user) return false;
@@ -170,28 +191,7 @@ export const getSongEngagement = async (req, res, next) => {
 };
 export const createSongHandler = async (req, res, next) => {
   try {
-    const payload = { ...req.body };
-    const audioFile = req.files?.audio?.[0];
-    const coverFile = req.files?.cover?.[0];
-
-    if (audioFile) {
-      const audioUpload = await uploadMediaFile({
-        folder: "uploads/music",
-        file: audioFile,
-        prefix: "song-audio",
-        ownerId: req.user?.id,
-      });
-      payload.audio_path = audioUpload.publicUrl;
-    }
-    if (coverFile) {
-      const coverUpload = await uploadMediaFile({
-        folder: "uploads/songs",
-        file: coverFile,
-        prefix: "song-cover",
-        ownerId: req.user?.id,
-      });
-      payload.cover_url = coverUpload.publicUrl;
-    }
+    const payload = normalizeSongPayload(req.body);
 
     if (req.user?.role === ROLES.ARTIST) {
       const artist = await getArtistByUserId(req.user.id);
@@ -224,28 +224,7 @@ export const createSongHandler = async (req, res, next) => {
 
 export const updateSongHandler = async (req, res, next) => {
   try {
-    const payload = { ...req.body };
-    const audioFile = req.files?.audio?.[0];
-    const coverFile = req.files?.cover?.[0];
-
-    if (audioFile) {
-      const audioUpload = await uploadMediaFile({
-        folder: "uploads/music",
-        file: audioFile,
-        prefix: "song-audio",
-        ownerId: req.user?.id,
-      });
-      payload.audio_path = audioUpload.publicUrl;
-    }
-    if (coverFile) {
-      const coverUpload = await uploadMediaFile({
-        folder: "uploads/songs",
-        file: coverFile,
-        prefix: "song-cover",
-        ownerId: req.user?.id,
-      });
-      payload.cover_url = coverUpload.publicUrl;
-    }
+    const payload = normalizeSongPayload(req.body);
 
     if (req.user?.role === ROLES.ARTIST) {
       const artist = await getArtistByUserId(req.user.id);
