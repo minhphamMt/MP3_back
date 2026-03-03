@@ -195,8 +195,61 @@ const searchSongsAdmin = async (keyword, { limit, offset, includeDeleted }) => {
 const searchArtists = async (keyword, { limit, offset, includeDeleted }) => {
   const normalizedKeyword = normalizeKeyword(keyword);
   const keywordTokens = tokenizeKeyword(normalizedKeyword);
-  const { clause: tokenFilterClause, params: tokenFilterParams } =
-    buildTokenFilter(["a.name", "a.alias", "a.realname"], keywordTokens);
+  const songVisibilityFilter = includeDeleted
+    ? ""
+    : "AND s.is_deleted = 0 AND s.status = 'approved' AND s.release_date IS NOT NULL AND s.release_date <= NOW()";
+  const albumVisibilityFilter = includeDeleted
+    ? ""
+    : `AND al.is_deleted = 0 AND (
+        (al.release_date IS NOT NULL AND al.release_date <= NOW())
+        OR EXISTS (
+          SELECT 1 FROM songs s2
+          WHERE s2.album_id = al.id
+            AND s2.status = 'approved'
+            AND s2.is_deleted = 0
+            AND s2.release_date IS NOT NULL
+            AND s2.release_date <= NOW()
+        )
+      )`;
+
+  const tokenFilterClause = keywordTokens.length
+    ? keywordTokens
+        .map(
+          () => `(
+            LOWER(a.name) LIKE ? OR LOWER(a.alias) LIKE ? OR LOWER(a.realname) LIKE ?
+            OR EXISTS (
+              SELECT 1 FROM songs s
+              WHERE s.artist_id = a.id
+              ${songVisibilityFilter}
+              AND LOWER(s.title) LIKE ?
+            )
+            OR EXISTS (
+              SELECT 1 FROM albums al
+              WHERE al.artist_id = a.id
+              ${albumVisibilityFilter}
+              AND LOWER(al.title) LIKE ?
+            )
+            OR EXISTS (
+              SELECT 1 FROM songs s
+              JOIN albums al ON al.id = s.album_id
+              WHERE s.artist_id = a.id
+              ${songVisibilityFilter}
+              ${albumVisibilityFilter}
+              AND LOWER(al.title) LIKE ?
+            )
+          )`
+        )
+        .join(" AND ")
+    : "";
+  const tokenFilterParams = keywordTokens.flatMap((token) => [
+    `%${token}%`,
+    `%${token}%`,
+    `%${token}%`,
+    `%${token}%`,
+    `%${token}%`,
+    `%${token}%`,
+  ]);
+
   const { clause: tokenScoreClause, params: tokenScoreParams } =
     buildTokenScore(
       [
@@ -206,6 +259,48 @@ const searchArtists = async (keyword, { limit, offset, includeDeleted }) => {
       ],
       keywordTokens
     );
+
+  const tokenSongScoreClause = keywordTokens.length
+    ? keywordTokens
+        .map(
+          () => `(EXISTS (
+            SELECT 1 FROM songs s
+            WHERE s.artist_id = a.id
+            ${songVisibilityFilter}
+            AND LOWER(s.title) LIKE ?
+          )) * 2`
+        )
+        .join(" + ")
+    : "0";
+  const tokenAlbumScoreClause = keywordTokens.length
+    ? keywordTokens
+        .map(
+          () => `(EXISTS (
+            SELECT 1 FROM albums al
+            WHERE al.artist_id = a.id
+            ${albumVisibilityFilter}
+            AND LOWER(al.title) LIKE ?
+          )) * 2`
+        )
+        .join(" + ")
+    : "0";
+  const tokenAlbumSongScoreClause = keywordTokens.length
+    ? keywordTokens
+        .map(
+          () => `(EXISTS (
+            SELECT 1 FROM songs s
+            JOIN albums al ON al.id = s.album_id
+            WHERE s.artist_id = a.id
+            ${songVisibilityFilter}
+            ${albumVisibilityFilter}
+            AND LOWER(al.title) LIKE ?
+          )) * 2`
+        )
+        .join(" + ")
+    : "0";
+  const tokenSongScoreParams = keywordTokens.map((token) => `%${token}%`);
+  const tokenAlbumScoreParams = keywordTokens.map((token) => `%${token}%`);
+  const tokenAlbumSongScoreParams = keywordTokens.map((token) => `%${token}%`);
 
   const deletedFilter = includeDeleted ? "" : "AND a.is_deleted = 0";
   const songDeletedFilter = includeDeleted ? "" : "AND s.is_deleted = 0";
@@ -237,7 +332,30 @@ const searchArtists = async (keyword, { limit, offset, includeDeleted }) => {
       (ANY_VALUE(a.name) LIKE ?) * 8 +
       (ANY_VALUE(a.alias) LIKE ?) * 6 +
       (ANY_VALUE(a.realname) LIKE ?) * 4 +
+      (EXISTS (
+        SELECT 1 FROM songs s
+        WHERE s.artist_id = a.id
+        ${songVisibilityFilter}
+        AND s.title LIKE ?
+      )) * 5 +
+      (EXISTS (
+        SELECT 1 FROM albums al
+        WHERE al.artist_id = a.id
+        ${albumVisibilityFilter}
+        AND al.title LIKE ?
+      )) * 4 +
+      (EXISTS (
+        SELECT 1 FROM songs s
+        JOIN albums al ON al.id = s.album_id
+        WHERE s.artist_id = a.id
+        ${songVisibilityFilter}
+        ${albumVisibilityFilter}
+        AND al.title LIKE ?
+      )) * 4 +
       ${tokenScoreClause} +
+      ${tokenSongScoreClause} +
+      ${tokenAlbumScoreClause} +
+      ${tokenAlbumSongScoreClause} +
       (ANY_VALUE(a.follow_count) * 0.01) AS score
     FROM artists a
     LEFT JOIN songs s
@@ -255,7 +373,13 @@ const searchArtists = async (keyword, { limit, offset, includeDeleted }) => {
       `${normalizedKeyword}%`,
       `${normalizedKeyword}%`,
       `${normalizedKeyword}%`,
+      `%${normalizedKeyword}%`,
+      `%${normalizedKeyword}%`,
+      `%${normalizedKeyword}%`,
       ...tokenScoreParams,
+      ...tokenSongScoreParams,
+      ...tokenAlbumScoreParams,
+      ...tokenAlbumSongScoreParams,
       ...tokenFilterParams,
       limit,
       offset,
@@ -306,8 +430,29 @@ const searchAlbums = async (
 ) => {
   const normalizedKeyword = normalizeKeyword(keyword);
   const keywordTokens = tokenizeKeyword(normalizedKeyword);
-  const { clause: tokenFilterClause, params: tokenFilterParams } =
-    buildTokenFilter(["al.title", "ar.name"], keywordTokens);
+  const songVisibilityFilter = includeDeleted
+    ? ""
+    : "AND s.is_deleted = 0 AND s.status = 'approved' AND s.release_date IS NOT NULL AND s.release_date <= NOW()";
+  const tokenFilterClause = keywordTokens.length
+    ? keywordTokens
+        .map(
+          () => `(
+            LOWER(al.title) LIKE ? OR LOWER(ar.name) LIKE ?
+            OR EXISTS (
+              SELECT 1 FROM songs s
+              WHERE s.album_id = al.id
+              ${songVisibilityFilter}
+              AND LOWER(s.title) LIKE ?
+            )
+          )`
+        )
+        .join(" AND ")
+    : "";
+  const tokenFilterParams = keywordTokens.flatMap((token) => [
+    `%${token}%`,
+    `%${token}%`,
+    `%${token}%`,
+  ]);
   const { clause: tokenScoreClause, params: tokenScoreParams } =
     buildTokenScore(
       [
@@ -316,6 +461,19 @@ const searchAlbums = async (
       ],
       keywordTokens
     );
+  const tokenSongScoreClause = keywordTokens.length
+    ? keywordTokens
+        .map(
+          () => `(EXISTS (
+            SELECT 1 FROM songs s
+            WHERE s.album_id = al.id
+            ${songVisibilityFilter}
+            AND LOWER(s.title) LIKE ?
+          )) * 1`
+        )
+        .join(" + ")
+    : "0";
+  const tokenSongScoreParams = keywordTokens.map((token) => `%${token}%`);
 
   const deletedFilter = includeDeleted ? "" : "AND al.is_deleted = 0";
   const releaseFilter = includeUnreleased
@@ -340,7 +498,14 @@ const searchAlbums = async (
       (LOWER(al.title) = LOWER(?)) * 16 +
       (al.title LIKE ?) * 10 +
       (ar.name LIKE ?) * 4 +
-      ${tokenScoreClause} AS score
+      (EXISTS (
+        SELECT 1 FROM songs s
+        WHERE s.album_id = al.id
+        ${songVisibilityFilter}
+        AND s.title LIKE ?
+      )) * 6 +
+      ${tokenScoreClause} +
+      ${tokenSongScoreClause} AS score
     FROM albums al
     LEFT JOIN artists ar ON ar.id = al.artist_id AND ar.is_deleted = 0
     WHERE 1=1
@@ -354,7 +519,9 @@ const searchAlbums = async (
       normalizedKeyword,
       `${normalizedKeyword}%`,
       `${normalizedKeyword}%`,
+      `%${normalizedKeyword}%`,
       ...tokenScoreParams,
+      ...tokenSongScoreParams,
       ...tokenFilterParams,
       limit,
       offset,
