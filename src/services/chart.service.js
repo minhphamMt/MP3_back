@@ -253,7 +253,86 @@ export const getMultiRegionChart = async (limit = 5) => {
   };
 };
 
+const getLatestAvailableWeekStart = async () => {
+  const [rows] = await db.query(`
+    SELECT MAX(period_start) AS week_start
+    FROM song_play_stats
+    WHERE period_type = 'week'
+      AND period_start <= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
+  `);
+
+  return rows[0]?.week_start ?? null;
+};
+
+const getTopSongsFallback = async (limit) => {
+  const [recentRows] = await db.query(
+    `
+    SELECT
+      s.id,
+      s.title,
+      s.cover_url,
+      s.duration,
+      a.name AS artist_name,
+      s.play_count AS weekly_play_count
+    FROM songs s
+    JOIN artists a ON a.id = s.artist_id
+    WHERE s.status = 'approved'
+      AND s.is_deleted = 0
+      AND a.is_deleted = 0
+      AND s.release_date IS NOT NULL
+      AND s.release_date <= NOW()
+      AND s.release_date >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)
+    ORDER BY s.play_count DESC
+    LIMIT ?
+    `,
+    [limit]
+  );
+
+  if (recentRows.length >= limit) {
+    return recentRows;
+  }
+
+  const remain = limit - recentRows.length;
+  const selectedIds = recentRows.map((row) => row.id);
+  const placeholders = selectedIds.map(() => "?").join(",");
+
+  const exclusionClause = selectedIds.length
+    ? ` AND s.id NOT IN (${placeholders})`
+    : "";
+
+  const [extendedRows] = await db.query(
+    `
+    SELECT
+      s.id,
+      s.title,
+      s.cover_url,
+      s.duration,
+      a.name AS artist_name,
+      s.play_count AS weekly_play_count
+    FROM songs s
+    JOIN artists a ON a.id = s.artist_id
+    WHERE s.status = 'approved'
+      AND s.is_deleted = 0
+      AND a.is_deleted = 0
+      AND s.release_date IS NOT NULL
+      AND s.release_date <= NOW()
+      ${exclusionClause}
+    ORDER BY s.play_count DESC
+    LIMIT ?
+    `,
+    [...selectedIds, remain]
+  );
+
+  return [...recentRows, ...extendedRows];
+};
+
 export const getTopWeeklySongs = async (limit = 5) => {
+  const weekStart = await getLatestAvailableWeekStart();
+
+  if (!weekStart) {
+    return getTopSongsFallback(limit);
+  }
+
   const [rows] = await db.query(
     `
     SELECT
@@ -267,7 +346,7 @@ export const getTopWeeklySongs = async (limit = 5) => {
     JOIN songs s ON s.id = sp.song_id
     JOIN artists a ON a.id = s.artist_id
     WHERE sp.period_type = 'week'
-      AND sp.period_start = DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
+      AND sp.period_start = ?
       AND s.status = 'approved'
       AND s.is_deleted = 0
       AND a.is_deleted = 0
@@ -276,14 +355,24 @@ export const getTopWeeklySongs = async (limit = 5) => {
     ORDER BY sp.play_count DESC
     LIMIT ?
     `,
-    [limit]
+    [weekStart, limit]
   );
 
-  return rows;
+  if (rows.length > 0) {
+    return rows;
+  }
+
+  return getTopSongsFallback(limit);
 };
 
 
 export const getWeeklyTop5 = async () => {
+  const weekStart = await getLatestAvailableWeekStart();
+
+  if (!weekStart) {
+    return [];
+  }
+
   const [rows] = await db.query(`
     SELECT
       w.song_id,
@@ -298,13 +387,13 @@ export const getWeeklyTop5 = async () => {
       SELECT song_id
       FROM song_play_stats
       WHERE period_type = 'week'
-        AND period_start = DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
+        AND period_start = ?
       ORDER BY play_count DESC
       LIMIT 5
     ) w
 
     CROSS JOIN (
-      SELECT CURDATE() - INTERVAL n DAY AS date
+      SELECT ? + INTERVAL n DAY AS date
       FROM (
         SELECT 0 n UNION ALL SELECT 1 UNION ALL SELECT 2
         UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6
@@ -321,7 +410,7 @@ export const getWeeklyTop5 = async () => {
       WHERE s.is_deleted = 0
       AND a.is_deleted = 0
     ORDER BY w.song_id, d.date ASC
-  `);
+  `, [weekStart, weekStart]);
 
   return rows;
 };
