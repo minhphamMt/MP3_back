@@ -320,7 +320,18 @@ const searchAlbums = async (
   const deletedFilter = includeDeleted ? "" : "AND al.is_deleted = 0";
   const releaseFilter = includeUnreleased
     ? ""
-    : "AND al.release_date IS NOT NULL AND al.release_date <= NOW()";
+    : `AND (
+        (al.release_date IS NOT NULL AND al.release_date <= NOW())
+        OR EXISTS (
+          SELECT 1
+          FROM songs s
+          WHERE s.album_id = al.id
+            AND s.status = 'approved'
+            AND s.is_deleted = 0
+            AND s.release_date IS NOT NULL
+            AND s.release_date <= NOW()
+        )
+      )`;
   const [rows] = await db.query(
     `
     SELECT
