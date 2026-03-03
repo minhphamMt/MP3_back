@@ -4,6 +4,51 @@ import { buildPaginationMeta } from "../utils/pagination.js";
 const escapeRegex = (value = "") =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+const normalizeKeyword = (keyword = "") => keyword.trim().replace(/\s+/g, " ");
+
+const tokenizeKeyword = (keyword = "") =>
+  [...new Set(normalizeKeyword(keyword).toLowerCase().split(" ").filter(Boolean))];
+
+const buildTokenFilter = (fields, tokens) => {
+  if (!tokens.length) {
+    return { clause: "", params: [] };
+  }
+
+  const clause = tokens
+    .map(
+      () =>
+        `(${fields.map((field) => `LOWER(${field}) LIKE ?`).join(" OR ")})`
+    )
+    .join(" AND ");
+
+  const params = tokens.flatMap((token) =>
+    fields.map(() => `%${token}%`)
+  );
+
+  return { clause, params };
+};
+
+const buildTokenScore = (weightedFields, tokens) => {
+  if (!tokens.length) {
+    return { clause: "0", params: [] };
+  }
+
+  const parts = [];
+  const params = [];
+
+  for (const token of tokens) {
+    for (const { field, weight } of weightedFields) {
+      parts.push(`(LOWER(${field}) LIKE ?) * ${weight}`);
+      params.push(`%${token}%`);
+    }
+  }
+
+  return {
+    clause: parts.join(" + "),
+    params,
+  };
+};
+
 const highlightText = (text, keyword) => {
   if (!text) return text;
 
@@ -32,10 +77,28 @@ const mapHighlightedFields = (row, keyword) => {
   };
 };
 const searchSongs = async (keyword, { limit, offset, userId }) => {
+  const normalizedKeyword = normalizeKeyword(keyword);
+  const keywordTokens = tokenizeKeyword(normalizedKeyword);
+  const { clause: tokenFilterClause, params: tokenFilterParams } =
+    buildTokenFilter(["s.title", "a.name", "al.title"], keywordTokens);
+  const { clause: tokenScoreClause, params: tokenScoreParams } =
+    buildTokenScore(
+      [
+        { field: "s.title", weight: 3 },
+        { field: "a.name", weight: 2 },
+        { field: "al.title", weight: 1 },
+      ],
+      keywordTokens
+    );
+
   const params = [
-    `${keyword}%`,
-    `%${keyword}%`,
-    `%${keyword}%`,
+    normalizedKeyword,
+    `${normalizedKeyword}%`,
+    `%${normalizedKeyword}%`,
+    `${normalizedKeyword}%`,
+    `%${normalizedKeyword}%`,
+    ...tokenScoreParams,
+    ...tokenFilterParams,
     limit,
     offset,
   ];
@@ -44,18 +107,26 @@ const searchSongs = async (keyword, { limit, offset, userId }) => {
     `
     SELECT
       s.*,
+      a.name AS artist_name,
+      al.title AS album_title,
       (
-        (s.title LIKE ?) * 5 +
-        (s.title LIKE ?) * 3 +
+        (LOWER(s.title) = LOWER(?)) * 18 +
+        (s.title LIKE ?) * 12 +
+        (s.title LIKE ?) * 8 +
+        (a.name LIKE ?) * 5 +
+        (a.name LIKE ?) * 3 +
+        ${tokenScoreClause} +
         (s.play_count * 0.001) +
         ((SELECT COUNT(*) FROM song_likes sl WHERE sl.song_id = s.id) * 0.01)
       ) AS score
     FROM songs s
+    LEFT JOIN artists a ON a.id = s.artist_id AND a.is_deleted = 0
+    LEFT JOIN albums al ON al.id = s.album_id AND al.is_deleted = 0
     WHERE s.status = 'approved'
     AND s.is_deleted = 0
     AND s.release_date IS NOT NULL
       AND s.release_date <= NOW()
-      AND s.title LIKE ?
+      ${tokenFilterClause ? `AND ${tokenFilterClause}` : ""}
     ORDER BY score DESC
     LIMIT ? OFFSET ?
     `,
@@ -65,10 +136,28 @@ const searchSongs = async (keyword, { limit, offset, userId }) => {
   return rows;
 };
 const searchSongsAdmin = async (keyword, { limit, offset, includeDeleted }) => {
+  const normalizedKeyword = normalizeKeyword(keyword);
+  const keywordTokens = tokenizeKeyword(normalizedKeyword);
+  const { clause: tokenFilterClause, params: tokenFilterParams } =
+    buildTokenFilter(["s.title", "a.name", "al.title"], keywordTokens);
+  const { clause: tokenScoreClause, params: tokenScoreParams } =
+    buildTokenScore(
+      [
+        { field: "s.title", weight: 3 },
+        { field: "a.name", weight: 2 },
+        { field: "al.title", weight: 1 },
+      ],
+      keywordTokens
+    );
+
   const params = [
-    `${keyword}%`,
-    `%${keyword}%`,
-    `%${keyword}%`,
+    normalizedKeyword,
+    `${normalizedKeyword}%`,
+    `%${normalizedKeyword}%`,
+    `${normalizedKeyword}%`,
+    `%${normalizedKeyword}%`,
+    ...tokenScoreParams,
+    ...tokenFilterParams,
     limit,
     offset,
   ];
@@ -77,14 +166,23 @@ const searchSongsAdmin = async (keyword, { limit, offset, includeDeleted }) => {
     `
     SELECT
       s.*,
+      a.name AS artist_name,
+      al.title AS album_title,
       (
-        (s.title LIKE ?) * 5 +
-        (s.title LIKE ?) * 3 +
+        (LOWER(s.title) = LOWER(?)) * 18 +
+        (s.title LIKE ?) * 12 +
+        (s.title LIKE ?) * 8 +
+        (a.name LIKE ?) * 5 +
+        (a.name LIKE ?) * 3 +
+        ${tokenScoreClause} +
         (s.play_count * 0.001) +
         ((SELECT COUNT(*) FROM song_likes sl WHERE sl.song_id = s.id) * 0.01)
       ) AS score
     FROM songs s
-    WHERE s.title LIKE ?
+    LEFT JOIN artists a ON a.id = s.artist_id
+    LEFT JOIN albums al ON al.id = s.album_id
+    WHERE 1=1
+      ${tokenFilterClause ? `AND ${tokenFilterClause}` : ""}
      ${deletedFilter}
     ORDER BY score DESC
     LIMIT ? OFFSET ?
@@ -95,6 +193,20 @@ const searchSongsAdmin = async (keyword, { limit, offset, includeDeleted }) => {
   return rows;
 };
 const searchArtists = async (keyword, { limit, offset, includeDeleted }) => {
+  const normalizedKeyword = normalizeKeyword(keyword);
+  const keywordTokens = tokenizeKeyword(normalizedKeyword);
+  const { clause: tokenFilterClause, params: tokenFilterParams } =
+    buildTokenFilter(["a.name", "a.alias", "a.realname"], keywordTokens);
+  const { clause: tokenScoreClause, params: tokenScoreParams } =
+    buildTokenScore(
+      [
+        { field: "a.name", weight: 3 },
+        { field: "a.alias", weight: 2 },
+        { field: "a.realname", weight: 1 },
+      ],
+      keywordTokens
+    );
+
   const deletedFilter = includeDeleted ? "" : "AND a.is_deleted = 0";
   const songDeletedFilter = includeDeleted ? "" : "AND s.is_deleted = 0";
 
@@ -121,23 +233,30 @@ const searchArtists = async (keyword, { limit, offset, includeDeleted }) => {
       ANY_VALUE(a.created_at) AS created_at,
       NULL AS updated_at,
       COUNT(s.id) AS song_count,
-      (ANY_VALUE(a.name) LIKE ?) * 5 +
-      (ANY_VALUE(a.name) LIKE ?) * 3 +
+      (LOWER(ANY_VALUE(a.name)) = LOWER(?)) * 15 +
+      (ANY_VALUE(a.name) LIKE ?) * 8 +
+      (ANY_VALUE(a.alias) LIKE ?) * 6 +
+      (ANY_VALUE(a.realname) LIKE ?) * 4 +
+      ${tokenScoreClause} +
       (ANY_VALUE(a.follow_count) * 0.01) AS score
     FROM artists a
     LEFT JOIN songs s
       ON s.artist_id = a.id
       ${songDeletedFilter}
-    WHERE a.name LIKE ?
+    WHERE 1=1
+    ${tokenFilterClause ? `AND ${tokenFilterClause}` : ""}
     ${deletedFilter}
     GROUP BY a.id
     ORDER BY score DESC
     LIMIT ? OFFSET ?
     `,
     [
-      `${keyword}%`,
-      `%${keyword}%`,
-      `%${keyword}%`,
+      normalizedKeyword,
+      `${normalizedKeyword}%`,
+      `${normalizedKeyword}%`,
+      `${normalizedKeyword}%`,
+      ...tokenScoreParams,
+      ...tokenFilterParams,
       limit,
       offset,
     ]
@@ -185,6 +304,19 @@ const searchAlbums = async (
   keyword,
   { limit, offset, includeDeleted, includeUnreleased }
 ) => {
+  const normalizedKeyword = normalizeKeyword(keyword);
+  const keywordTokens = tokenizeKeyword(normalizedKeyword);
+  const { clause: tokenFilterClause, params: tokenFilterParams } =
+    buildTokenFilter(["al.title", "ar.name"], keywordTokens);
+  const { clause: tokenScoreClause, params: tokenScoreParams } =
+    buildTokenScore(
+      [
+        { field: "al.title", weight: 3 },
+        { field: "ar.name", weight: 2 },
+      ],
+      keywordTokens
+    );
+
   const deletedFilter = includeDeleted ? "" : "AND al.is_deleted = 0";
   const releaseFilter = includeUnreleased
     ? ""
@@ -193,19 +325,26 @@ const searchAlbums = async (
     `
     SELECT
       al.*,
-      (al.title LIKE ?) * 5 +
-      (al.title LIKE ?) * 3 AS score
+      ar.name AS artist_name,
+      (LOWER(al.title) = LOWER(?)) * 16 +
+      (al.title LIKE ?) * 10 +
+      (ar.name LIKE ?) * 4 +
+      ${tokenScoreClause} AS score
     FROM albums al
-    WHERE al.title LIKE ?
+    LEFT JOIN artists ar ON ar.id = al.artist_id AND ar.is_deleted = 0
+    WHERE 1=1
+    ${tokenFilterClause ? `AND ${tokenFilterClause}` : ""}
     ${deletedFilter}
     ${releaseFilter}
     ORDER BY score DESC
     LIMIT ? OFFSET ?
     `,
     [
-      `${keyword}%`,
-      `%${keyword}%`,
-      `%${keyword}%`,
+      normalizedKeyword,
+      `${normalizedKeyword}%`,
+      `${normalizedKeyword}%`,
+      ...tokenScoreParams,
+      ...tokenFilterParams,
       limit,
       offset,
     ]
