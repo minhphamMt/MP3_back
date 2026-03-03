@@ -11,6 +11,7 @@ const env = {
   dbPassword: process.env.DB_PASS,
   dbName: process.env.DB_NAME,
   embeddingServiceUrl: process.env.EMBEDDING_SERVICE_URL,
+  embeddingTimeoutMs: process.env.EMBEDDING_TIMEOUT_MS,
   frontendUrl: process.env.FRONTEND_URL,
   emailTransport:
   process.env.EMAIL_TRANSPORT || (process.env.BREVO_API_KEY ? "brevo" : process.env.SMTP_HOST ? "smtp" : "log"),

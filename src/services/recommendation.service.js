@@ -3,6 +3,7 @@ import env from "../config/env.js";
 
 const DEFAULT_LIMIT = 20;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const DEFAULT_EMBEDDING_TIMEOUT_MS = 800;
 const MAX_HISTORY_ROWS = 100;
 const COLD_START_CANDIDATE_MULTIPLIER = 3;
 const COLD_START_MAX_PER_ARTIST = 2;
@@ -49,6 +50,15 @@ const normalizeLimit = (limit) => {
   }
 
   return Math.min(parsed, 100);
+};
+
+const normalizeEmbeddingTimeout = (timeoutMs) => {
+  const parsed = Number(timeoutMs);
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    return DEFAULT_EMBEDDING_TIMEOUT_MS;
+  }
+
+  return Math.min(parsed, 5000);
 };
 
 const getCachedRecommendations = (userId) => {
@@ -532,10 +542,19 @@ const callEmbeddingService = async (userId, historyRows, limit) => {
     return [];
   }
 
+  const timeoutMs = normalizeEmbeddingTimeout(env.embeddingTimeoutMs);
+
+  const hasAbortController = typeof AbortController === "function";
+  const controller = hasAbortController ? new AbortController() : null;
+  const timeoutId = setTimeout(() => {
+    controller?.abort();
+  }, timeoutMs);
+
   try {
     const response = await fetchFn(`${env.embeddingServiceUrl}/recommend`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: controller?.signal,
       body: JSON.stringify({
         user_id: userId,
         history: historyRows?.map((item) => item.song_id) || [],
@@ -561,6 +580,8 @@ const callEmbeddingService = async (userId, historyRows, limit) => {
     return toNumericIds(suggestions).slice(0, limit);
   } catch (error) {
     return [];
+  } finally {
+    clearTimeout(timeoutId);
   }
 };
 

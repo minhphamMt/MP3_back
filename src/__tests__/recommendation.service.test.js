@@ -4,9 +4,17 @@ const mockDb = {
   query: jest.fn(),
 };
 
-const loadService = async () => {
+const loadService = async (envOverrides = {}) => {
   jest.unstable_mockModule("../config/db.js", () => ({
     default: mockDb,
+  }));
+
+  jest.unstable_mockModule("../config/env.js", () => ({
+    default: {
+      embeddingServiceUrl: "http://embedding-service",
+      embeddingTimeoutMs: "20",
+      ...envOverrides,
+    },
   }));
 
   const module = await import("../services/recommendation.service.js");
@@ -85,7 +93,9 @@ describe("getColdStartRecommendations", () => {
       ],
     ]);
 
-    const { getColdStartRecommendations } = await loadService();
+    const { getColdStartRecommendations } = await loadService({
+      embeddingServiceUrl: undefined,
+    });
 
     const result = await getColdStartRecommendations(5);
 
@@ -98,5 +108,48 @@ describe("getColdStartRecommendations", () => {
       title: "Popular One",
       reason: "popular",
     });
+  });
+});
+
+describe("getRecommendations", () => {
+  beforeEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+    delete global.fetch;
+  });
+
+  it("falls back quickly when embedding service request times out", async () => {
+    global.fetch = jest.fn((_, options = {}) => {
+      return new Promise((_, reject) => {
+        options.signal?.addEventListener("abort", () => {
+          reject(new Error("aborted"));
+        });
+      });
+    });
+
+    mockDb.query
+      .mockResolvedValueOnce([
+        [
+          {
+            song_id: 21,
+            artist_id: 2,
+            album_id: 3,
+            genres: "Pop",
+            play_count: 4,
+          },
+        ],
+      ])
+      .mockResolvedValueOnce([[{ id: 31, preference_score: 3 }]])
+      .mockResolvedValueOnce([[{ id: 41 }]]);
+
+    const { getRecommendations } = await loadService({
+      embeddingTimeoutMs: "10",
+    });
+
+    const result = await getRecommendations(99, 2);
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(result).toEqual([31, 41]);
+    expect(mockDb.query).toHaveBeenCalledTimes(3);
   });
 });
