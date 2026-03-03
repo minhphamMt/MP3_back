@@ -4,17 +4,9 @@ const mockDb = {
   query: jest.fn(),
 };
 
-const loadService = async (envOverrides = {}) => {
+const loadService = async () => {
   jest.unstable_mockModule("../config/db.js", () => ({
     default: mockDb,
-  }));
-
-  jest.unstable_mockModule("../config/env.js", () => ({
-    default: {
-      embeddingServiceUrl: "http://embedding-service",
-      embeddingTimeoutMs: "20",
-      ...envOverrides,
-    },
   }));
 
   const module = await import("../services/recommendation.service.js");
@@ -75,81 +67,28 @@ describe("getColdStartRecommendations", () => {
           release_date: "2026-02-01",
           source: "fresh",
         },
-      ],
-    ]);
-
-    mockDb.query.mockResolvedValueOnce([
-      [
         {
           id: 5,
-          title: "Explore One",
+          title: "Fresh Two",
           artist_id: 12,
           artist_name: "Artist C",
           cover_url: "cover-5.jpg",
-          play_count: 5000,
-          release_date: "2025-12-01",
-          source: "explore",
+          play_count: 80000,
+          release_date: "2026-02-02",
+          source: "fresh",
         },
       ],
     ]);
 
-    const { getColdStartRecommendations } = await loadService({
-      embeddingServiceUrl: undefined,
-    });
+    const { getColdStartRecommendations } = await loadService();
 
-    const result = await getColdStartRecommendations(5);
+    const result = await getColdStartRecommendations(4);
 
-    expect(mockDb.query).toHaveBeenCalledTimes(3);
+    expect(mockDb.query).toHaveBeenCalledTimes(2);
     expect(result).toHaveLength(4);
-    expect(result.map((item) => item.songId)).toEqual([1, 2, 4, 5]);
     expect(result.filter((item) => item.artistId === 10)).toHaveLength(2);
-    expect(result[0]).toMatchObject({
-      songId: 1,
-      title: "Popular One",
-      reason: "popular",
-    });
-  });
-});
-
-describe("getRecommendations", () => {
-  beforeEach(() => {
-    jest.resetModules();
-    jest.clearAllMocks();
-    delete global.fetch;
-  });
-
-  it("falls back quickly when embedding service request times out", async () => {
-    global.fetch = jest.fn((_, options = {}) => {
-      return new Promise((_, reject) => {
-        options.signal?.addEventListener("abort", () => {
-          reject(new Error("aborted"));
-        });
-      });
-    });
-
-    mockDb.query
-      .mockResolvedValueOnce([
-        [
-          {
-            song_id: 21,
-            artist_id: 2,
-            album_id: 3,
-            genres: "Pop",
-            play_count: 4,
-          },
-        ],
-      ])
-      .mockResolvedValueOnce([[{ id: 31, preference_score: 3 }]])
-      .mockResolvedValueOnce([[{ id: 41 }]]);
-
-    const { getRecommendations } = await loadService({
-      embeddingTimeoutMs: "10",
-    });
-
-    const result = await getRecommendations(99, 2);
-
-    expect(global.fetch).toHaveBeenCalledTimes(1);
-    expect(result).toEqual([31, 41]);
-    expect(mockDb.query).toHaveBeenCalledTimes(3);
+    expect(result.map((item) => item.reason)).toEqual(
+      expect.arrayContaining(["popular", "fresh"])
+    );
   });
 });

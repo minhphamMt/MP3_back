@@ -27,11 +27,11 @@ const parseNonNegativeNumber = (value, fallback) => {
 // candidate size
 const AUDIO_CANDIDATES = parsePositiveInt(
   process.env.SIMILAR_AUDIO_CANDIDATES,
-  200
+  120
 );
 const META_CANDIDATES = parsePositiveInt(
   process.env.SIMILAR_META_CANDIDATES,
-  200
+  120
 );
 
 // final results
@@ -60,11 +60,15 @@ const MAX_PER_ARTIST = parsePositiveInt(
 const RECENT_HOURS = parsePositiveInt(process.env.SIMILAR_RECENT_HOURS, 2);
 const PRESELECT_CANDIDATES = parsePositiveInt(
   process.env.SIMILAR_PRESELECT_CANDIDATES,
-  1200
+  600
 );
 const CACHE_TTL_MS = parsePositiveInt(
   process.env.SIMILAR_CACHE_TTL_MS,
-  2 * 60 * 1000
+  10 * 60 * 1000
+);
+const CACHE_STALE_MS = parsePositiveInt(
+  process.env.SIMILAR_CACHE_STALE_MS,
+  30 * 60 * 1000
 );
 
 // quality gates
@@ -144,8 +148,13 @@ const getCachedSimilarSongs = (cacheKey) => {
   const item = similarSongsCache.get(cacheKey);
   if (!item) return null;
 
-  if (item.expiresAt > Date.now()) {
-    return item.data;
+  const now = Date.now();
+  if (item.expiresAt > now) {
+    return { data: item.data, isStale: false };
+  }
+
+  if (item.staleAt > now) {
+    return { data: item.data, isStale: true };
   }
 
   similarSongsCache.delete(cacheKey);
@@ -153,10 +162,25 @@ const getCachedSimilarSongs = (cacheKey) => {
 };
 
 const setCachedSimilarSongs = (cacheKey, data) => {
+  const now = Date.now();
   similarSongsCache.set(cacheKey, {
     data,
-    expiresAt: Date.now() + CACHE_TTL_MS,
+    expiresAt: now + CACHE_TTL_MS,
+    staleAt: now + Math.max(CACHE_TTL_MS, CACHE_STALE_MS),
+    refreshing: false,
   });
+};
+
+const markSimilarSongsRefreshing = (cacheKey) => {
+  const item = similarSongsCache.get(cacheKey);
+  if (!item || item.refreshing) return false;
+
+  similarSongsCache.set(cacheKey, {
+    ...item,
+    refreshing: true,
+  });
+
+  return true;
 };
 
 /**
@@ -494,18 +518,16 @@ const getFallbackCandidates = async (query, excludeSongId, limit) => {
  * =========================
  */
 
-export const getSimilarSongs = async (songId, userId = null) => {
-  const cacheKey = `${songId}:${userId || "anon"}`;
-  const cached = getCachedSimilarSongs(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
+const buildSimilarSongs = async (songId, userId = null) => {
   const query = await getQuerySong(songId);
   if (!query) {
     const err = new Error("Song not found");
     err.status = 404;
     throw err;
+  }
+
+  if (!query.audioVec && !query.metaVec) {
+    return getFallbackCandidates(query, songId, FINAL_RESULTS);
   }
 
   const candidates = await getAllCandidates(songId, userId, query.song);
@@ -566,9 +588,7 @@ export const getSimilarSongs = async (songId, userId = null) => {
   });
 
   if (!mergedMap.size) {
-    const fallbackOnly = await getFallbackCandidates(query, songId, FINAL_RESULTS);
-    setCachedSimilarSongs(cacheKey, fallbackOnly);
-    return fallbackOnly;
+    return getFallbackCandidates(query, songId, FINAL_RESULTS);
   }
 
   /**
@@ -633,14 +653,42 @@ export const getSimilarSongs = async (songId, userId = null) => {
   }
 
   if (!finalResults.length) {
-    const fallbackOnly = await getFallbackCandidates(query, songId, FINAL_RESULTS);
-    setCachedSimilarSongs(cacheKey, fallbackOnly);
-    return fallbackOnly;
+    return getFallbackCandidates(query, songId, FINAL_RESULTS);
   }
 
-  setCachedSimilarSongs(cacheKey, finalResults);
-
   return finalResults;
+};
+
+const refreshSimilarSongs = async (cacheKey, songId, userId) => {
+  if (!markSimilarSongsRefreshing(cacheKey)) {
+    return;
+  }
+
+  try {
+    const data = await buildSimilarSongs(songId, userId);
+    setCachedSimilarSongs(cacheKey, data);
+  } catch {
+    const item = similarSongsCache.get(cacheKey);
+    if (item) {
+      similarSongsCache.set(cacheKey, { ...item, refreshing: false });
+    }
+  }
+};
+
+export const getSimilarSongs = async (songId, userId = null) => {
+  const cacheKey = `${songId}:${userId || "anon"}`;
+  const cached = getCachedSimilarSongs(cacheKey);
+  if (cached) {
+    if (cached.isStale) {
+      void refreshSimilarSongs(cacheKey, songId, userId);
+    }
+    return cached.data;
+  }
+
+  const results = await buildSimilarSongs(songId, userId);
+  setCachedSimilarSongs(cacheKey, results);
+
+  return results;
 };
 
 export default {
