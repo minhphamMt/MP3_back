@@ -63,7 +63,11 @@ export const getZingChart = async () => {
 /**
  * New Release Chart – Bài mới phát hành
  */
-export const getNewReleaseChart = async () => {
+export const getNewReleaseChart = async ({ page = 1, limit = 20 } = {}) => {
+  const safePage = Math.max(1, Number(page) || 1);
+  const safeLimit = Math.min(50, Math.max(1, Number(limit) || 20));
+  const offset = (safePage - 1) * safeLimit;
+
   const [rows] = await db.query(`
     SELECT
       s.id,
@@ -87,23 +91,21 @@ export const getNewReleaseChart = async () => {
     AND s.release_date IS NOT NULL
     AND s.release_date <= NOW()
     ORDER BY s.release_date DESC
-    LIMIT 20
-  `);
+    LIMIT ? OFFSET ?
+  `, [safeLimit, offset]);
 
-  return rows.map((row) => ({
-    song: {
-      id: row.id,
-      title: row.title,
-      cover_url: row.cover_url,
-      duration: row.duration,
-      release_date: row.release_date,
-      album: row.album_id
-        ? {
-            id: row.album_id,
-            title: row.album_title,
-          }
-        : null,
-    },
+  const songs = rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    cover_url: row.cover_url,
+    duration: row.duration,
+    release_date: row.release_date,
+    album: row.album_id
+      ? {
+          id: row.album_id,
+          title: row.album_title,
+        }
+      : null,
     artist: row.artist_id
       ? {
           id: row.artist_id,
@@ -111,6 +113,13 @@ export const getNewReleaseChart = async () => {
         }
       : null,
   }));
+
+  return {
+    page: safePage,
+    limit: safeLimit,
+    songs,
+    hasMore: songs.length === safeLimit,
+  };
 };
 
 

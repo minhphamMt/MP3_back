@@ -21,7 +21,13 @@ export const zingChart = async (req, res, next) => {
 
 export const newReleaseChart = async (req, res, next) => {
   try {
-    const data = await getNewReleaseChart();
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(
+      50,
+      Math.max(1, Number.parseInt(req.query.limit, 10) || 20)
+    );
+
+    const data = await getNewReleaseChart({ page, limit });
     return successResponse(res, data);
   } catch (error) {
     return next(error);

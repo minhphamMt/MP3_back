@@ -8,10 +8,67 @@ jest.unstable_mockModule("../config/db.js", () => ({
   default: mockDb,
 }));
 
-const { getTopWeeklySongs, getWeeklyTop5 } = await import(
+const { getTopWeeklySongs, getWeeklyTop5, getNewReleaseChart } = await import(
   "../services/chart.service.js"
 );
 
+
+
+describe("chart.service new release pagination", () => {
+  beforeEach(() => {
+    mockDb.query.mockReset();
+  });
+
+  it("returns paginated songs with flat song payload", async () => {
+    mockDb.query.mockResolvedValueOnce([[
+      {
+        id: 7,
+        title: "Fresh Song",
+        cover_url: "fresh.jpg",
+        duration: 210,
+        release_date: "2024-10-01",
+        album_id: 9,
+        album_title: "Fresh Album",
+        artist_id: 3,
+        artist_name: "Fresh Artist",
+      },
+    ]]);
+
+    const result = await getNewReleaseChart({ page: 2, limit: 1 });
+
+    expect(mockDb.query).toHaveBeenCalledWith(expect.stringContaining("LIMIT ? OFFSET ?"), [1, 1]);
+    expect(result).toEqual({
+      page: 2,
+      limit: 1,
+      hasMore: true,
+      songs: [
+        {
+          id: 7,
+          title: "Fresh Song",
+          cover_url: "fresh.jpg",
+          duration: 210,
+          release_date: "2024-10-01",
+          album: { id: 9, title: "Fresh Album" },
+          artist: { id: 3, name: "Fresh Artist" },
+        },
+      ],
+    });
+  });
+
+  it("normalizes invalid paging input", async () => {
+    mockDb.query.mockResolvedValueOnce([[]]);
+
+    const result = await getNewReleaseChart({ page: -2, limit: 999 });
+
+    expect(mockDb.query).toHaveBeenCalledWith(expect.stringContaining("LIMIT ? OFFSET ?"), [50, 0]);
+    expect(result).toEqual({
+      page: 1,
+      limit: 50,
+      hasMore: false,
+      songs: [],
+    });
+  });
+});
 describe("chart.service weekly fallback", () => {
   beforeEach(() => {
     mockDb.query.mockReset();
