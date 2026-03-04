@@ -740,9 +740,11 @@ export const listSongsByArtist = async (
     `,
     [artistId]
   );
+
   if (!artistRows[0]) {
     throw new Error("Artist not found");
   }
+
   const [songRows] = await db.query(
     `
     SELECT
@@ -754,19 +756,18 @@ export const listSongsByArtist = async (
       s.album_id,
       s.status,
       s.reject_reason,
+      s.release_date,
+      s.created_at,
+      COALESCE(s.release_date, DATE(s.created_at)) AS published_date,
       al.title AS album_title
     FROM songs s
     LEFT JOIN albums al ON s.album_id = al.id
     WHERE s.artist_id = ?
-    AND s.is_deleted = 0
+      AND s.is_deleted = 0
       AND ${includeUnreleased ? "1=1" : "s.status = 'approved'"}
       AND ${includeUnreleased ? "1=1" : "s.audio_path IS NOT NULL"}
-      ${
-        includeUnreleased
-          ? ""
-          : "AND s.release_date IS NOT NULL AND s.release_date <= NOW()"
-      }
-    ORDER BY s.release_date DESC
+      AND ${includeUnreleased ? "1=1" : "(s.release_date IS NULL OR s.release_date <= CURDATE())"}
+    ORDER BY COALESCE(s.release_date, DATE(s.created_at)) DESC, s.id DESC
     `,
     [artistId]
   );
@@ -776,6 +777,7 @@ export const listSongsByArtist = async (
     songs: songRows,
   };
 };
+
 
 export const getLikedSongsByUser = async (userId) => {
   const [rows] = await db.query(
