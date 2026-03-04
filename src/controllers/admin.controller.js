@@ -22,6 +22,7 @@ import { getPaginationParams } from "../utils/pagination.js";
 import { searchAdminEntities } from "../services/search.service.js";
 import {
   getSystemOverview,
+  getAdminCharts,
   getWeeklyTopSongs,
 } from "../services/admin.service.js";
 import { uploadMediaFile } from "../services/storage.service.js";
@@ -404,6 +405,22 @@ export const getReportOverview = async (req, res, next) => {
   }
 };
 
+export const getReportCharts = async (req, res, next) => {
+  try {
+    const charts = await getAdminCharts({
+      from: req.query.from,
+      to: req.query.to,
+      tz: req.query.tz,
+      bucket: req.query.bucket,
+      include: req.query.include,
+    });
+
+    return successResponse(res, charts);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 export const listSongsRequest = async (req, res, next) => {
   try {
     const { page, limit, offset } = getPaginationParams(req.query);
@@ -488,6 +505,7 @@ export default {
   restoreGenreRequest,
   searchAdmin,
   getReportOverview,
+  getReportCharts,
   listSongsRequest,
   getSongRequest,
   updateSongRequest,

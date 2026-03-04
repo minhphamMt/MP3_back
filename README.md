@@ -37,3 +37,28 @@ MAIL_FROM="Music App <your_email@gmail.com>"
   - Có `BREVO_API_KEY` -> tự dùng `brevo`.
   - Nếu không có nhưng có `SMTP_HOST` -> tự dùng `smtp`.
   - Không có cả 2 -> `log`.
+
+## Admin report charts API
+
+### GET `/api/admin/reports/charts`
+
+Endpoint mới để phục vụ dashboard chart cho admin (đã aggregate sẵn ở backend).
+
+Query params:
+- `from` (`YYYY-MM-DD`, optional)
+- `to` (`YYYY-MM-DD`, optional)
+- `tz` (IANA timezone, default `Asia/Ho_Chi_Minh`)
+- `bucket` (`day` | `month`, default `day`)
+- `include` (comma-separated, optional):
+  - `song_status`
+  - `weekly_top`
+  - `genre_status`
+  - `user_distribution`
+  - `artist_request_trend`
+  - `album_by_month`
+
+Ghi chú:
+- Chỉ ADMIN mới truy cập được.
+- Backend group theo timezone từ `tz`.
+- Timeline được fill liên tục (thiếu thì count = 0).
+- Có cache in-memory theo bộ tham số `from/to/tz/include/bucket` (TTL 10 phút).
