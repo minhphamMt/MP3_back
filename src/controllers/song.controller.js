@@ -40,6 +40,22 @@ const normalizeSongPayload = (body = {}) => {
     }
   }
 
+  if (payload.artistIds && payload.artist_ids === undefined) {
+    payload.artist_ids = payload.artistIds;
+  }
+
+  if (payload.artist_ids !== undefined) {
+    const artistIds = Array.isArray(payload.artist_ids)
+      ? payload.artist_ids
+      : String(payload.artist_ids)
+          .split(",")
+          .map((item) => item.trim());
+
+    payload.artist_ids = artistIds
+      .map((item) => Number(item))
+      .filter((item) => Number.isInteger(item) && item > 0);
+  }
+
   return payload;
 };
 
@@ -200,6 +216,7 @@ export const createSongHandler = async (req, res, next) => {
       }
 
       payload.artist_id = artist.id;
+      payload.artist_ids = [artist.id, ...(payload.artist_ids || []).filter((id) => id !== artist.id)];
       payload.status = SONG_STATUS.PENDING;
 
       if (payload.album_id) {
@@ -244,6 +261,7 @@ export const updateSongHandler = async (req, res, next) => {
 
       delete payload.status;
       delete payload.artist_id;
+      delete payload.artist_ids;
 
       if (payload.album_id) {
        const album = await getAlbumById(payload.album_id, {

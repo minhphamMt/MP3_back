@@ -22,6 +22,85 @@ const normalizeGenres = (genres) => {
 
 const parseGenreString = (genreString) =>
   genreString ? genreString.split(",").filter(Boolean) : [];
+
+const normalizeArtistIds = (artistIds, fallbackArtistId) => {
+  const source = artistIds ?? fallbackArtistId;
+  if (source === undefined || source === null || source === "") {
+    return [];
+  }
+
+  const list = Array.isArray(source)
+    ? source
+    : String(source)
+        .split(",")
+        .map((item) => item.trim());
+
+  const unique = [...new Set(list)]
+    .map((item) => Number(item))
+    .filter((item) => Number.isInteger(item) && item > 0);
+
+  return unique;
+};
+
+const attachSongArtists = async (songs = []) => {
+  if (!songs.length) return songs;
+
+  const songIds = songs.map((song) => song.id).filter(Boolean);
+  if (!songIds.length) return songs;
+
+  const placeholders = songIds.map(() => "?").join(",");
+  const [artistRows] = await db.query(
+    `
+    SELECT
+      sa.song_id,
+      sa.artist_id,
+      sa.artist_role,
+      sa.sort_order,
+      ar.name AS artist_name
+    FROM song_artists sa
+    JOIN artists ar ON ar.id = sa.artist_id
+    WHERE sa.song_id IN (${placeholders})
+    ORDER BY sa.song_id, sa.sort_order ASC, sa.created_at ASC
+    `,
+    songIds
+  );
+
+  const artistMap = new Map();
+  for (const row of artistRows) {
+    if (!artistMap.has(row.song_id)) {
+      artistMap.set(row.song_id, []);
+    }
+    artistMap.get(row.song_id).push({
+      id: row.artist_id,
+      name: row.artist_name,
+      role: row.artist_role,
+      sort_order: row.sort_order,
+    });
+  }
+
+  return songs.map((song) => ({
+    ...song,
+    artists: artistMap.get(song.id) || [],
+  }));
+};
+
+const syncSongArtists = async (songId, artistIds = []) => {
+  if (!artistIds.length) return;
+
+  const values = artistIds.map((artistId, index) => [
+    songId,
+    artistId,
+    index === 0 ? "main" : "featured",
+    index,
+  ]);
+
+  await db.query("DELETE FROM song_artists WHERE song_id = ?", [songId]);
+  await db.query(
+    "INSERT INTO song_artists (song_id, artist_id, artist_role, sort_order) VALUES ?",
+    [values]
+  );
+};
+
 const normalizeGenreInput = (genres) => {
   if (!genres) return [];
   const list = Array.isArray(genres)
@@ -209,7 +288,15 @@ export const listSongs = async ({
   if (keyword) {
     const normalizedKeyword = `%${keyword}%`;
     filters.push(
-      "(s.title LIKE ? OR ar.name LIKE ? OR al.title LIKE ?)"
+      `(s.title LIKE ?
+        OR al.title LIKE ?
+        OR EXISTS (
+          SELECT 1
+          FROM song_artists sa_keyword
+          JOIN artists ar_keyword ON ar_keyword.id = sa_keyword.artist_id
+          WHERE sa_keyword.song_id = s.id
+            AND ar_keyword.name LIKE ?
+        ))`
     );
     params.push(normalizedKeyword, normalizedKeyword, normalizedKeyword);
   }
@@ -244,7 +331,14 @@ export const listSongs = async ({
   }
 
   if (artistId) {
-    filters.push("s.artist_id = ?");
+    filters.push(
+      `EXISTS (
+        SELECT 1
+        FROM song_artists sa_filter
+        WHERE sa_filter.song_id = s.id
+          AND sa_filter.artist_id = ?
+      )`
+    );
     params.push(artistId);
   }
 
@@ -277,11 +371,15 @@ export const listSongs = async ({
     [...params, limit, offset]
   );
 
-  return {
-    items: rows.map((row) => ({
+  const songsWithArtists = await attachSongArtists(
+    rows.map((row) => ({
       ...row,
       genres: parseGenreString(row.genres),
-    })),
+    }))
+  );
+
+  return {
+    items: songsWithArtists,
     meta: { page, limit },
   };
 };
@@ -333,9 +431,16 @@ export const getSongById = async (
 
   if (!rows[0]) return null;
 
+  const [songWithArtists] = await attachSongArtists([
+    {
+      ...rows[0],
+      genres: parseGenreString(rows[0].genres),
+    },
+  ]);
+
   return {
     ...rows[0],
-    genres: parseGenreString(rows[0].genres),
+    ...songWithArtists,
   };
 };
 
@@ -525,6 +630,7 @@ export const getSongStats = async (songId) => getSongEngagement(songId);
 export const createSong = async ({
   title,
   artist_id,
+  artist_ids,
   album_id,
   duration,
   audio_path,
@@ -541,6 +647,11 @@ export const createSong = async ({
   const allowedStatuses = Object.values(SONG_STATUS);
   if (status && !allowedStatuses.includes(status)) {
     throw createError(400, "Invalid status");
+  }
+
+  const normalizedArtistIds = normalizeArtistIds(artist_ids, artist_id);
+  if (!normalizedArtistIds.length) {
+    throw createError(400, "artist_id or artist_ids is required");
   }
 
   const [result] = await db.query(
@@ -560,7 +671,7 @@ export const createSong = async ({
   `,
     [
       title,
-      artist_id || null,
+      normalizedArtistIds[0],
       album_id || null,
       duration || null,
       audio_path || null,
@@ -571,6 +682,7 @@ export const createSong = async ({
     ]
   );
 
+  await syncSongArtists(result.insertId, normalizedArtistIds);
   await syncSongGenres(result.insertId, genres);
   return getSongById(result.insertId);
 };
@@ -580,6 +692,7 @@ export const updateSong = async (
   {
     title,
     artist_id,
+    artist_ids,
     album_id,
     duration,
     audio_path,
@@ -608,7 +721,7 @@ export const updateSong = async (
 
   const updatable = {
     title,
-    artist_id,
+    artist_id: artist_id ?? normalizeArtistIds(artist_ids)[0],
     album_id,
     duration,
     audio_path,
@@ -635,6 +748,17 @@ export const updateSong = async (
 
   if (genres !== undefined) {
     await syncSongGenres(id, genres);
+  }
+
+  if (artist_id !== undefined || artist_ids !== undefined) {
+    const normalizedArtistIds = normalizeArtistIds(
+      artist_ids,
+      artist_id ?? existing[0].artist_id
+    );
+    if (!normalizedArtistIds.length) {
+      throw createError(400, "artist_id or artist_ids is required");
+    }
+    await syncSongArtists(id, normalizedArtistIds);
   }
 
   return getSongById(id);
