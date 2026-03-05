@@ -49,6 +49,48 @@ const buildTokenScore = (weightedFields, tokens) => {
   };
 };
 
+const attachSongArtists = async (songs = []) => {
+  if (!songs.length) return songs;
+
+  const songIds = songs.map((song) => song.id).filter(Boolean);
+  if (!songIds.length) return songs;
+
+  const placeholders = songIds.map(() => "?").join(",");
+  const [artistRows] = await db.query(
+    `
+    SELECT
+      sa.song_id,
+      sa.artist_id,
+      sa.artist_role,
+      sa.sort_order,
+      ar.name AS artist_name
+    FROM song_artists sa
+    JOIN artists ar ON ar.id = sa.artist_id
+    WHERE sa.song_id IN (${placeholders})
+    ORDER BY sa.song_id, sa.sort_order ASC, sa.created_at ASC
+    `,
+    songIds
+  );
+
+  const artistMap = new Map();
+  for (const row of artistRows) {
+    if (!artistMap.has(row.song_id)) {
+      artistMap.set(row.song_id, []);
+    }
+    artistMap.get(row.song_id).push({
+      id: row.artist_id,
+      name: row.artist_name,
+      role: row.artist_role,
+      sort_order: row.sort_order,
+    });
+  }
+
+  return songs.map((song) => ({
+    ...song,
+    artists: artistMap.get(song.id) || [],
+  }));
+};
+
 const highlightText = (text, keyword) => {
   if (!text) return text;
 
@@ -79,13 +121,14 @@ const mapHighlightedFields = (row, keyword) => {
 const searchSongs = async (keyword, { limit, offset, userId }) => {
   const normalizedKeyword = normalizeKeyword(keyword);
   const keywordTokens = tokenizeKeyword(normalizedKeyword);
+  const artistSearchField = "COALESCE(sa_names.artist_names, a.name)";
   const { clause: tokenFilterClause, params: tokenFilterParams } =
-    buildTokenFilter(["s.title", "a.name", "al.title"], keywordTokens);
+    buildTokenFilter(["s.title", artistSearchField, "al.title"], keywordTokens);
   const { clause: tokenScoreClause, params: tokenScoreParams } =
     buildTokenScore(
       [
         { field: "s.title", weight: 3 },
-        { field: "a.name", weight: 2 },
+        { field: artistSearchField, weight: 2 },
         { field: "al.title", weight: 1 },
       ],
       keywordTokens
@@ -113,8 +156,8 @@ const searchSongs = async (keyword, { limit, offset, userId }) => {
         (LOWER(s.title) = LOWER(?)) * 18 +
         (s.title LIKE ?) * 12 +
         (s.title LIKE ?) * 8 +
-        (a.name LIKE ?) * 5 +
-        (a.name LIKE ?) * 3 +
+        (${artistSearchField} LIKE ?) * 5 +
+        (${artistSearchField} LIKE ?) * 3 +
         ${tokenScoreClause} +
         (s.play_count * 0.001) +
         ((SELECT COUNT(*) FROM song_likes sl WHERE sl.song_id = s.id) * 0.01)
@@ -122,6 +165,14 @@ const searchSongs = async (keyword, { limit, offset, userId }) => {
     FROM songs s
     LEFT JOIN artists a ON a.id = s.artist_id AND a.is_deleted = 0
     LEFT JOIN albums al ON al.id = s.album_id AND al.is_deleted = 0
+    LEFT JOIN (
+      SELECT
+        sa.song_id,
+        GROUP_CONCAT(ar.name ORDER BY sa.sort_order ASC, sa.created_at ASC SEPARATOR ' ') AS artist_names
+      FROM song_artists sa
+      JOIN artists ar ON ar.id = sa.artist_id
+      GROUP BY sa.song_id
+    ) sa_names ON sa_names.song_id = s.id
     WHERE s.status = 'approved'
     AND s.is_deleted = 0
     AND s.release_date IS NOT NULL
@@ -133,18 +184,19 @@ const searchSongs = async (keyword, { limit, offset, userId }) => {
     params
   );
 
-  return rows;
+  return attachSongArtists(rows);
 };
 const searchSongsAdmin = async (keyword, { limit, offset, includeDeleted }) => {
   const normalizedKeyword = normalizeKeyword(keyword);
   const keywordTokens = tokenizeKeyword(normalizedKeyword);
+  const artistSearchField = "COALESCE(sa_names.artist_names, a.name)";
   const { clause: tokenFilterClause, params: tokenFilterParams } =
-    buildTokenFilter(["s.title", "a.name", "al.title"], keywordTokens);
+    buildTokenFilter(["s.title", artistSearchField, "al.title"], keywordTokens);
   const { clause: tokenScoreClause, params: tokenScoreParams } =
     buildTokenScore(
       [
         { field: "s.title", weight: 3 },
-        { field: "a.name", weight: 2 },
+        { field: artistSearchField, weight: 2 },
         { field: "al.title", weight: 1 },
       ],
       keywordTokens
@@ -172,8 +224,8 @@ const searchSongsAdmin = async (keyword, { limit, offset, includeDeleted }) => {
         (LOWER(s.title) = LOWER(?)) * 18 +
         (s.title LIKE ?) * 12 +
         (s.title LIKE ?) * 8 +
-        (a.name LIKE ?) * 5 +
-        (a.name LIKE ?) * 3 +
+        (${artistSearchField} LIKE ?) * 5 +
+        (${artistSearchField} LIKE ?) * 3 +
         ${tokenScoreClause} +
         (s.play_count * 0.001) +
         ((SELECT COUNT(*) FROM song_likes sl WHERE sl.song_id = s.id) * 0.01)
@@ -181,6 +233,14 @@ const searchSongsAdmin = async (keyword, { limit, offset, includeDeleted }) => {
     FROM songs s
     LEFT JOIN artists a ON a.id = s.artist_id
     LEFT JOIN albums al ON al.id = s.album_id
+    LEFT JOIN (
+      SELECT
+        sa.song_id,
+        GROUP_CONCAT(ar.name ORDER BY sa.sort_order ASC, sa.created_at ASC SEPARATOR ' ') AS artist_names
+      FROM song_artists sa
+      JOIN artists ar ON ar.id = sa.artist_id
+      GROUP BY sa.song_id
+    ) sa_names ON sa_names.song_id = s.id
     WHERE 1=1
       ${tokenFilterClause ? `AND ${tokenFilterClause}` : ""}
      ${deletedFilter}
@@ -190,7 +250,7 @@ const searchSongsAdmin = async (keyword, { limit, offset, includeDeleted }) => {
     params
   );
 
-  return rows;
+  return attachSongArtists(rows);
 };
 const searchArtists = async (keyword, { limit, offset, includeDeleted }) => {
   const normalizedKeyword = normalizeKeyword(keyword);

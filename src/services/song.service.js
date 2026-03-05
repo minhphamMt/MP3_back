@@ -737,7 +737,7 @@ export const updateSong = async (
       values.push(value);
     }
   });
-
+  
   if (fields.length) {
     values.push(id);
     await db.query(
