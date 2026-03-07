@@ -200,7 +200,7 @@ const parseVector = (value) => {
   }
 };
 
-export const cosineSimilarity = (a, b) => {
+const cosineSimilarity = (a, b) => {
   if (!a || !b || a.length !== b.length) return 0;
 
   let dot = 0,
@@ -687,8 +687,4 @@ export const getSimilarSongs = async (songId, userId = null) => {
   setCachedSimilarSongs(cacheKey, results);
 
   return results;
-};
-
-export default {
-  getSimilarSongs,
 };

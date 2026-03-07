@@ -56,9 +56,3 @@ export const getHistory = async (req, res, next) => {
     return next(error);
   }
 };
-
-export default {
-  search,
-  getHistory,
-  saveHistory
-};

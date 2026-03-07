@@ -13,7 +13,7 @@ jest.unstable_mockModule("../services/chart.service.js", () => ({
   getTopWeeklySongs: mockGetTopWeeklySongs,
 }));
 
-const { getAdminCharts, __private__ } = await import("../services/admin.service.js");
+const { getAdminCharts } = await import("../services/admin.service.js");
 
 describe("admin.service charts", () => {
   beforeEach(() => {
@@ -114,11 +114,5 @@ describe("admin.service charts", () => {
       role: { USER: 5, ARTIST: 0, ADMIN: 0 },
       activity: { active: 4, inactive: 1 },
     });
-  });
-
-  it("normalizes include list", () => {
-    expect(__private__.normalizeInclude("song_status,abc")).toEqual([
-      "song_status",
-    ]);
   });
 });

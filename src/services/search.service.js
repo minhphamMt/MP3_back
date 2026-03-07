@@ -694,9 +694,3 @@ export const listSearchHistory = async (userId, { page, limit, offset }) => {
 };
 
 
-export default {
-  searchEntities,
-  searchAdminEntities,
-  saveSearchHistory,
-  listSearchHistory,
-};

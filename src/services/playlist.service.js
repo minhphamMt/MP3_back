@@ -380,13 +380,3 @@ export const reorderSongInPlaylist = async (
   return getPlaylistById(playlistId);
 };
 
-export default {
-  listPlaylists,
-  getPlaylistById,
-  createPlaylist,
-  updatePlaylist,
-  deletePlaylist,
-  addSongToPlaylist,
-  removeSongFromPlaylist,
-  reorderSongInPlaylist,
-};

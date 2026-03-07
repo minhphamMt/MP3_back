@@ -7,7 +7,6 @@ import ROLES from "../constants/roles.js";
 import {
   likeAlbumHandler,
   unlikeAlbumHandler,
-  uploadAlbumCoverHandler,
 } from "../controllers/album.controller.js";
 import { uploadAlbumCover } from "../middlewares/upload.middleware.js";
 const router = Router();
@@ -21,15 +20,15 @@ router.delete("/:id/like", authMiddleware, unlikeAlbumHandler);
 router.post(
   "/",
   authMiddleware,
- rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
- uploadAlbumCover,
+  rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
+  uploadAlbumCover,
   albumController.createAlbumHandler
 );
 router.put(
   "/:id",
   authMiddleware,
- rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
- uploadAlbumCover,
+  rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
+  uploadAlbumCover,
   albumController.updateAlbumHandler
 );
 router.delete(
@@ -43,13 +42,6 @@ router.patch(
   authMiddleware,
   rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
   albumController.restoreAlbumHandler
-);
-router.post(
-  "/:id/cover",
-  authMiddleware,
-  rbacMiddleware(ROLES.ADMIN, ROLES.ARTIST),
-  uploadAlbumCover,
-  uploadAlbumCoverHandler
 );
 
 export default router;

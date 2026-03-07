@@ -120,8 +120,3 @@ export const getFollowedArtists = async (userId) => {
 };
 
 
-export default {
-  followArtist,
-  unfollowArtist,
-  getFollowedArtists,
-};

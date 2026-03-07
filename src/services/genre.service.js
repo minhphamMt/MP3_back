@@ -34,7 +34,7 @@ export const listGenres = async ({ page, limit, offset, keyword } = {}) => {
   };
 };
 
-export const getGenreById = async (id) => {
+const getGenreById = async (id) => {
   const [rows] = await db.query(
     "SELECT id, name FROM genres WHERE id = ? AND is_deleted = 0",
     [id]
@@ -197,13 +197,3 @@ export const restoreGenre = async (
   return getGenreById(id);
 };
 
-export default {
-  listGenres,
-  getGenreById,
-  getGenreByIdWithDeleted,
-  createGenre,
-  updateGenre,
-  deleteGenre,
-  softDeleteGenre,
-  restoreGenre,
-};

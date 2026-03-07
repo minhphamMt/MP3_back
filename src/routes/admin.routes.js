@@ -21,7 +21,6 @@ router.patch("/songs/:id/review", adminController.reviewSongRequest);
 router.patch("/songs/:id/approve", adminController.approveSongRequest);
 router.patch("/songs/:id/block", adminController.blockSongRequest);
 router.get("/songs", adminController.listSongsRequest);
-router.get("/songs/:id", adminController.getSongRequest);
 router.put("/songs/:id", uploadSongMedia, adminController.updateSongRequest);
 router.get("/artist-requests", adminController.listArtistRequestsRequest);
 router.patch(
@@ -36,8 +35,5 @@ router.patch(
   "/artist-requests/:id/reject",
   adminController.rejectArtistRequest
 );
-router.patch("/users/:id/active", adminController.toggleUserActive);
-router.patch("/users/:id/role", adminController.updateUserRole);
-router.patch("/users/:id", adminController.updateUserRequest);
 
 export default router;

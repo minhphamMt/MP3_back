@@ -18,7 +18,3 @@ export const getMyListeningHistory = async (req, res, next) => {
     return next(error);
   }
 };
-
-export default {
-  getMyListeningHistory,
-};

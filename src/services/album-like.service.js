@@ -105,8 +105,3 @@ export const getLikedAlbums = async (userId) => {
   }));
 };
 
-export default {
-  likeAlbum,
-  unlikeAlbum,
-  getLikedAlbums,
-};

@@ -127,14 +127,3 @@ export const reorderSong = async (req, res, next) => {
     return next(error);
   }
 };
-
-export default {
-  getPlaylists,
-  getPlaylist,
-  createPlaylistHandler,
-  updatePlaylistHandler,
-  deletePlaylistHandler,
-  addSong,
-  removeSong,
-  reorderSong,
-};

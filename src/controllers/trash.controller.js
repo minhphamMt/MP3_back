@@ -25,7 +25,3 @@ export const getDeletedItems = async (req, res, next) => {
     return next(error);
   }
 };
-
-export default {
-  getDeletedItems,
-};

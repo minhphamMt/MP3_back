@@ -252,16 +252,3 @@ export const uploadArtistAvatar = async (req, res, next) => {
     return next(error);
   }
 };
-
-
-export default {
-  getArtists,
-  getArtist,
-  getMyArtistProfile,
-  createArtistHandler,
-  updateArtistHandler,
-  restoreArtistHandler,
-  deleteArtistHandler,
-  getArtistCollections,
-  uploadArtistAvatar,
-};

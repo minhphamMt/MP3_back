@@ -6,6 +6,7 @@ import {
   deleteUser,
   changePassword,
   setActiveStatus,
+  setUserRole,
 } from "../services/user.service.js";
 import { getLikedSongsByUser } from "../services/song.service.js";
 import { successResponse } from "../utils/response.js";
@@ -62,6 +63,20 @@ export const updateProfile = async (req, res, next) => {
 export const updateUser = async (req, res, next) => {
   try {
     const updated = await updateUserProfile(req.params.id, req.body);
+    return res.json(updated);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const updateUserRole = async (req, res, next) => {
+  try {
+    const { role } = req.body;
+    if (!role) {
+      return res.status(400).json({ message: "role is required" });
+    }
+
+    const updated = await setUserRole(req.params.id, role);
     return res.json(updated);
   } catch (error) {
     return next(error);
@@ -173,20 +188,4 @@ export const uploadUserAvatarByAdmin = async (req, res, next) => {
   } catch (err) {
     next(err);
   }
-};
-
-export default {
-  getCurrentUser,
-  listUsers,
-  createUserByAdmin,
-  getUser,
-  updateProfile,
-  updateUser,
-  removeUser,
-  updatePassword,
-  toggleActive,
-  getMyLikedSongs,
-  getMyLikedAlbums,
-  uploadAvatar,
-  uploadUserAvatarByAdmin
 };

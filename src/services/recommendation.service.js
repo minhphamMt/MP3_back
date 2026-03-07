@@ -205,7 +205,3 @@ export const getColdStartRecommendations = async (limit = DEFAULT_LIMIT) => {
 
   return recommendations;
 };
-
-export default {
-  getColdStartRecommendations,
-};

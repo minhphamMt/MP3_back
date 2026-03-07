@@ -621,25 +621,6 @@ export const recordSongPlay = async (songId, userId, duration = null) => {
   return getSongEngagement(songId);
 };
 
-
-
-
-
-
-export const incrementPlayCount = async (songId) => {
-  const [result] = await db.query(
-    "UPDATE songs SET play_count = play_count + 1 WHERE id = ?",
-    [songId]
-  );
-
-  if (!result.affectedRows) {
-    throw createError(404, "Song not found");
-  }
-
-  return getSongEngagement(songId);
-};
-
-export const getSongStats = async (songId) => getSongEngagement(songId);
 export const createSong = async ({
   title,
   artist_id,
@@ -980,22 +961,3 @@ export const getLikedSongs= async (userId) => {
   }));
 };
 
-export default {
-  listSongs,
-  getSongById,
-  likeSong,
-  unlikeSong,
-  recordSongPlay,
-  incrementPlayCount,
-  getSongStats,
-  reviewSong,
-  updateSongMedia,
-  createSong,
-  updateSong,
-  deleteSong,
-  softDeleteSong,
-  restoreSong,
-  listSongsByArtist,
-  getLikedSongsByUser,
-  getLikedSongs
-};

@@ -257,7 +257,3 @@ export const sendPasswordResetEmail = async ({
   });
 };
 
-export default {
-  sendVerificationEmail,
-  sendPasswordResetEmail,
-};

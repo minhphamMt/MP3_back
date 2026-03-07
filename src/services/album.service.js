@@ -371,13 +371,3 @@ export const restoreAlbum = async (
   return getAlbumById(id, { includeSongs: true, includeUnreleased: true, includeDeleted: true });
 };
 
-export default {
-  listAlbums,
-  getAlbumById,
-  updateAlbumCover,
-  createAlbum,
-  updateAlbum,
-  deleteAlbum,
-  softDeleteAlbum,
-  restoreAlbum,
-};

@@ -1,11 +1,4 @@
-import { getSongById, listSongs, reviewSong, updateSong } from "../services/song.service.js";
-import {
-  getUserById,
-  setActiveStatus,
-  setUserPassword,
-  setUserRole,
-  updateUserProfile,
-} from "../services/user.service.js";
+import { listSongs, reviewSong, updateSong } from "../services/song.service.js";
 import { logger } from "../utils/logger.js";
 import { successResponse } from "../utils/response.js";
 import SONG_STATUS from "../constants/song-status.js";
@@ -215,96 +208,6 @@ export const rejectArtistRequest = async (req, res, next) => {
   }
 };
 
-export const toggleUserActive = async (req, res, next) => {
-  try {
-    const isActivePayload = req.body.is_active ?? req.body.isActive;
-
-    if (isActivePayload === undefined) {
-      return next(createHttpError(400, "is_active is required"));
-    }
-
-    const user = await setActiveStatus(req.params.id, Boolean(isActivePayload));
-
-    logger.info("User active status updated", {
-      adminId: req.user.id,
-      userId: req.params.id,
-      isActive: Boolean(isActivePayload),
-    });
-
-    return res.json({
-      message: `User ${
-        Boolean(isActivePayload) ? "unlocked" : "locked"
-      } successfully`,
-      user,
-    });
-  } catch (error) {
-    return next(error);
-  }
-};
-
-export const updateUserRole = async (req, res, next) => {
-  try {
-    const { role } = req.body;
-    if (!role) {
-      return next(createHttpError(400, "role is required"));
-    }
-
-    const user = await setUserRole(req.params.id, role);
-
-    logger.info("User role updated", {
-      adminId: req.user.id,
-      userId: req.params.id,
-      role,
-    });
-
-    return res.json({
-      message: "User role updated successfully",
-      user,
-    });
-  } catch (error) {
-    return next(error);
-  }
-};
-
-export const updateUserRequest = async (req, res, next) => {
-  try {
-    const { role, password } = req.body;
-    const displayName = req.body.display_name ?? req.body.name;
-
-    if (role === undefined && displayName === undefined && password === undefined) {
-      return next(createHttpError(400, "No user updates provided"));
-    }
-
-    if (displayName !== undefined) {
-      await updateUserProfile(req.params.id, { display_name: displayName });
-    }
-
-    if (role !== undefined) {
-      await setUserRole(req.params.id, role);
-    }
-
-    if (password !== undefined) {
-      await setUserPassword(req.params.id, password);
-    }
-
-    const user = await getUserById(req.params.id);
-
-    logger.info("User updated by admin", {
-      adminId: req.user.id,
-      userId: req.params.id,
-      role,
-      hasPasswordChange: password !== undefined,
-    });
-
-    return res.json({
-      message: "User updated successfully",
-      user,
-    });
-  } catch (error) {
-    return next(error);
-  }
-};
-
 export const listGenresRequest = async (req, res, next) => {
   try {
     const { page, limit, offset } = getPaginationParams(req.query);
@@ -445,19 +348,6 @@ export const listSongsRequest = async (req, res, next) => {
   }
 };
 
-export const getSongRequest = async (req, res, next) => {
-  try {
-    const song = await getSongById(req.params.id, { includeUnreleased: true });
-    if (!song) {
-      return next(createHttpError(404, "Song not found"));
-    }
-
-    return successResponse(res, song);
-  } catch (error) {
-    return next(error);
-  }
-};
-
 export const updateSongRequest = async (req, res, next) => {
   try {
     const payload = { ...req.body };
@@ -489,28 +379,4 @@ export const updateSongRequest = async (req, res, next) => {
   } catch (error) {
     return next(error);
   }
-};
-
-export default {
-  reviewSongRequest,
-  approveSongRequest,
-  blockSongRequest,
-  toggleUserActive,
-  updateUserRole,
-  updateUserRequest,
-  listGenresRequest,
-  createGenreRequest,
-  updateGenreRequest,
-  deleteGenreRequest,
-  restoreGenreRequest,
-  searchAdmin,
-  getReportOverview,
-  getReportCharts,
-  listSongsRequest,
-  getSongRequest,
-  updateSongRequest,
-  listArtistRequestsRequest,
-  reviewArtistRequestHandler,
-  approveArtistRequest,
-  rejectArtistRequest,
 };

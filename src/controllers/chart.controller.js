@@ -6,7 +6,7 @@ import {
   getWeeklyTop5,
   getTop50SongsByGenres 
 } from "../services/chart.service.js";
-import { successResponse, errorResponse } from "../utils/response.js";
+import { successResponse } from "../utils/response.js";
 import { getSongDailySeries } from "../services/chart.service.js";
 import { buildDailySeries } from "../services/chart.utils.js";
 import { getMultiRegionChart } from "../services/chart.service.js";
@@ -102,14 +102,4 @@ export const getTop50ByGenres = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-};
-export default {
-  zingChart,
-  newReleaseChart,
-  top100Chart,
-  zingChartSeries,
-  getRegionCharts,
-  getWeeklyTop5Songs,
-  getWeeklyTop5Series,
-  getTop50ByGenres
 };

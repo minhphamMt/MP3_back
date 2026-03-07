@@ -412,16 +412,3 @@ export const getAdminCharts = async ({ from, to, tz, bucket, include, weeklyLimi
   return response;
 };
 
-export const __private__ = {
-  isValidIanaTimezone,
-  shiftDateString,
-  getDateRange,
-  getMonthRange,
-  normalizeInclude,
-};
-
-export default {
-  getSystemOverview,
-  getWeeklyTopSongs,
-  getAdminCharts,
-};

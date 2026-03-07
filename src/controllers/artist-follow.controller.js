@@ -38,9 +38,3 @@ export const getMyFollowedArtists = async (req, res, next) => {
     next(error);
   }
 };
-
-export default {
-  follow,
-  unfollow,
-  getMyFollowedArtists,
-};

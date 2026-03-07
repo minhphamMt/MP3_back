@@ -4,7 +4,6 @@ import {
   softDeleteSong,
   restoreSong,
   getSongById,
-  getSongStats,
   recordSongPlay,
   likeSong,
   listSongs,
@@ -235,15 +234,6 @@ export const recordPlay = async (req, res, next) => {
     return next(error);
   }
 };
-
-export const getSongEngagement = async (req, res, next) => {
-  try {
-    const stats = await getSongStats(req.params.id);
-    return successResponse(res, stats);
-  } catch (error) {
-    return next(error);
-  }
-};
 export const createSongHandler = async (req, res, next) => {
   try {
     const payload = normalizeSongPayload(req.body);
@@ -370,47 +360,6 @@ export const uploadSongAudio = async (req, res, next) => {
   }
 };
 
-export const uploadSongCover = async (req, res, next) => {
-  try {
-    if (!req.file) {
-      return errorResponse(res, "No file uploaded", 400);
-    }
-
-    const existingSong = await getSongById(req.params.id, {
-      includeUnreleased: true,
-    });
-    if (!existingSong) {
-      return errorResponse(res, "Song not found", 404);
-    }
-
-    if (req.user?.role === ROLES.ARTIST) {
-      const artist = await getArtistByUserId(req.user.id);
-      if (!artist) {
-        return errorResponse(res, "Artist profile not found", 403);
-      }
-      if (existingSong.artist_id !== artist.id) {
-        return errorResponse(res, "Forbidden", 403);
-      }
-    }
-
-    const coverUpload = await uploadMediaFile({
-      folder: "uploads/songs",
-      file: req.file,
-      prefix: "song-cover",
-      ownerId: req.user?.id,
-    });
-    const coverUrl = coverUpload.publicUrl;
-    const song = await updateSongMedia(req.params.id, { coverUrl });
-
-    return successResponse(res, {
-      cover_url: coverUrl,
-      song,
-    });
-  } catch (error) {
-    return next(error);
-  }
-};
-
 export const deleteSongHandler = async (req, res, next) => {
   try {
     const existingSong = await getSongById(req.params.id, {
@@ -512,21 +461,4 @@ export const getLikedSongss = async (req, res, next) => {
   } catch (err) {
     next(err);
   }
-};
-
-export default {
-  getSongs,
-  getSong,
-  likeSongHandler,
-  unlikeSongHandler,
-  recordPlay,
-  getSongEngagement,
-  createSongHandler,
-  updateSongHandler,
-  uploadSongAudio,
-  uploadSongCover,
-  restoreSongHandler,
-  deleteSongHandler,
-  getSongsByArtist,
-  getLikedSongss
 };

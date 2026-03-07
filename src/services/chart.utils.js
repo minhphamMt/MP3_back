@@ -65,4 +65,3 @@ export const buildDailySeries = (
   return result;
 };
 
-export default { buildDailySeries };

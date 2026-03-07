@@ -11,7 +11,3 @@ export const getColdStartRecommendationsHandler = async (req, res, next) => {
     return next(error);
   }
 };
-
-export default {
-  getColdStartRecommendationsHandler,
-};

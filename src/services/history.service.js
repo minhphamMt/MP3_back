@@ -138,7 +138,3 @@ LIMIT ? OFFSET ?
 };
 
 
-export default {
-  recordListeningHistory,
-  getUserListeningHistory
-};

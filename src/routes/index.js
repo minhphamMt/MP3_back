@@ -7,9 +7,7 @@ import albumRoutes from "./album.routes.js";
 import songRoutes from "./song.routes.js";
 import playlistRoutes from "./playlist.routes.js";
 import searchRoutes from "./search.routes.js";
-import analyticsRoutes from "./analytics.routes.js";
 import adminRoutes from "./admin.routes.js";
-import uploadRoutes from "./upload.routes.js";
 import recommendationRoutes from "./recommendation.routes.js";
 import songRecommendRoutes from "./song-recommend.routes.js";
 import trashRoutes from "./trash.routes.js";
@@ -42,15 +40,13 @@ const routeMappings = [
   { path: "/songs", handler: songRoutes },
   { path: "/playlists", handler: playlistRoutes },
   { path: "/search", handler: searchRoutes },
-  { path: "/analytics", handler: analyticsRoutes },
   { path: "/admin", handler: adminRoutes },
-  { path: "/uploads", handler: uploadRoutes },
   { path: "/recommendations", handler: recommendationRoutes },
   { path: "/recommend", handler: songRecommendRoutes },
   { path: "/artist-requests", handler: artistRequestRoutes },
   { path: "/history", handler: historyRoutes },
-   { path: "/charts", handler: chartRoutes },
-   { path: "/trash", handler: trashRoutes },
+  { path: "/charts", handler: chartRoutes },
+  { path: "/trash", handler: trashRoutes },
 ];
 
 routeMappings.forEach(({ path, handler }) => {

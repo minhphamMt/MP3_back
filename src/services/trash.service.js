@@ -88,6 +88,3 @@ export const listDeletedItems = async ({ role, artistId }) => {
   };
 };
 
-export default {
-  listDeletedItems,
-};

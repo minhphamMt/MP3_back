@@ -170,7 +170,7 @@ export const getSongDailySeries = async (songId, days = 7) => {
   return rows;
 };
 
-export const getRegionChart = async (regionKey, limit = 5) => {
+const getRegionChart = async (regionKey, limit = 5) => {
   const genres = REGION_GENRES[regionKey];
   if (!genres) {
     throw new Error("Invalid region");
@@ -503,14 +503,3 @@ export const getTop50SongsByGenres = async () => {
 
 
 
-export default {
-  getZingChart,
-  getNewReleaseChart,
-  getTop100Chart,
-  getSongDailySeries,
-  getRegionChart,
-  getMultiRegionChart,
-  getTopWeeklySongs,
-  getWeeklyTop5,
-  getTop50SongsByGenres
-};

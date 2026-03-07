@@ -79,7 +79,3 @@ export const getLyricSnapshot = async (songId, timeMs) => {
   };
 };
 
-export default {
-  listLyricsBySongId,
-  getLyricSnapshot,
-};

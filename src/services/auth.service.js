@@ -538,14 +538,3 @@ export const logoutUser = async (refreshToken) => {
   return { message: "Đăng xuất thành công" };
 };
 
-export default {
-  registerUser,
-  verifyEmailRegistration,
-  resendVerificationEmail,
-  loginUser,
-  refreshTokens,
-  logoutUser,
-  firebaseLoginUser,
-  requestPasswordReset,
-  resetPassword,
-};

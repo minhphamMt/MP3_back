@@ -16,16 +16,15 @@ router.use(authMiddleware);
 // Current user routes
 router.get("/me", userController.getCurrentUser);
 router.put("/me", userController.updateProfile);
-router.get("/me/liked-songs", authMiddleware, userController.getMyLikedSongs);
+router.get("/me/liked-songs", userController.getMyLikedSongs);
 router.patch("/me/password", userController.updatePassword);
 router.post(
   "/me/avatar",
-  authMiddleware,
   uploadAvatar,
   uploadAvatarController
 );
 // Liked albums
-router.get("/me/liked-albums", authMiddleware, getMyLikedAlbums);
+router.get("/me/liked-albums", getMyLikedAlbums);
 router.get(
   "/me/followed-artists",
   followController.getMyFollowedArtists
@@ -36,6 +35,7 @@ router.post("/", rbacMiddleware(ROLES.ADMIN), userController.createUserByAdmin);
 router.get("/:id", rbacMiddleware(ROLES.ADMIN), userController.getUser);
 router.put("/:id", rbacMiddleware(ROLES.ADMIN), userController.updateUser);
 router.delete("/:id", rbacMiddleware(ROLES.ADMIN), userController.removeUser);
+router.patch("/:id/role", rbacMiddleware(ROLES.ADMIN), userController.updateUserRole);
 router.post(
   "/:id/avatar",
   rbacMiddleware(ROLES.ADMIN),

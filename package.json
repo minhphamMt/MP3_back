@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand",
     "dev": "nodemon src/server.js",
     "start": "node src/server.js"
   },
@@ -33,9 +33,6 @@
     "supertest": "^7.0.0"
   },
   "jest": {
-    "testEnvironment": "node",
-    "extensionsToTreatAsEsm": [
-      ".js"
-    ]
+    "testEnvironment": "node"
   }
 }

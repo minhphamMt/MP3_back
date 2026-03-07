@@ -6,7 +6,6 @@ const mockSongService = {
   softDeleteSong: jest.fn(),
   restoreSong: jest.fn(),
   getSongById: jest.fn(),
-  getSongStats: jest.fn(),
   recordSongPlay: jest.fn(),
   likeSong: jest.fn(),
   listSongs: jest.fn(),

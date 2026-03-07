@@ -19,7 +19,3 @@ export const getSimilarSongsHandler = async (req, res, next) => {
     return next(err);
   }
 };
-
-export default {
-  getSimilarSongsHandler,
-};

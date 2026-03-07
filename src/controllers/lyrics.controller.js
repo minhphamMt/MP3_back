@@ -40,7 +40,3 @@ export const getSongLyrics = async (req, res, next) => {
     return next(error);
   }
 };
-
-export default {
-  getSongLyrics,
-};

@@ -530,15 +530,3 @@ export const listArtistCollections = async (limit = 8) => {
   return rows;
 };
 
-export default {
-  listArtists,
-  getArtistById,
-  getArtistByUserId,
-  getArtistByUserIdWithDeleted,
-  createArtist,
-  updateArtist,
-  deleteArtist,
-  softDeleteArtist,
-  restoreArtist,
-  listArtistCollections,
-};

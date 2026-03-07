@@ -117,15 +117,3 @@ export const confirmResetPassword = async (req, res, next) => {
     return next(error);
   }
 };
-
-export default {
-  register,
-  verifyEmail,
-  verifyEmailFromLink,
-  resendVerification,
-  login,
-  logout,
-  refresh,
-  forgotPassword,
-  confirmResetPassword,
-};

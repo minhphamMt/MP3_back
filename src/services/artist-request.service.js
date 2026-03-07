@@ -13,7 +13,7 @@ const createError = (status, message) => {
   return err;
 };
 
-export const getArtistRequestById = async (id) => {
+const getArtistRequestById = async (id) => {
   if (!id) return null;
   const [rows] = await db.query(
     `
@@ -264,11 +264,3 @@ export const updateMyArtistRequest = async ({
   return getArtistRequestByUserId(userId);
 };
 
-export default {
-  getArtistRequestById,
-  getArtistRequestByUserId,
-  listArtistRequests,
-  createArtistRequest,
-  reviewArtistRequest,
-  updateMyArtistRequest,
-};
