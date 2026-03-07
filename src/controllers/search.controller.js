@@ -15,21 +15,20 @@ export const search = async (req, res, next) => {
 
     const { page, limit, offset } = getPaginationParams(req.query);
     const userId = req.user?.id;
-const result = await searchEntities(keyword, {
-  page,
-  limit,
-  offset,
-  userId,
-});
+    const result = await searchEntities(keyword, {
+      page,
+      limit,
+      offset,
+      userId,
+    });
 
-
-    // ❌ KHÔNG lưu history ở search realtime
+    // Search realtime does not persist history.
     return successResponse(res, result.items, result.meta);
   } catch (error) {
     return next(error);
   }
 };
-// controllers/search.controller.js
+
 export const saveHistory = async (req, res, next) => {
   try {
     const { keyword } = req.body;

@@ -354,9 +354,14 @@ const searchArtists = async (keyword, { limit, offset, includeDeleted }) => {
   const tokenAlbumSongScoreParams = keywordTokens.map((token) => `%${token}%`);
 
   const deletedFilter = includeDeleted ? "" : "AND a.is_deleted = 0";
-  const songDeletedFilter = includeDeleted
-    ? ""
-    : `AND ${buildSongPublicVisibilityCondition("s")}`;
+  const joinedSongCountExpression = includeDeleted
+    ? "COUNT(DISTINCT s.id)"
+    : `COUNT(DISTINCT CASE
+        WHEN ${buildSongPublicVisibilityCondition("s", {
+          albumAlias: "al_song_visibility",
+        })}
+        THEN s.id
+      END)`;
 
   const [rows] = await db.query(
     `
@@ -380,7 +385,7 @@ const searchArtists = async (keyword, { limit, offset, includeDeleted }) => {
       ANY_VALUE(a.deleted_by_role) AS deleted_by_role,
       ANY_VALUE(a.created_at) AS created_at,
       NULL AS updated_at,
-      COUNT(s.id) AS song_count,
+      ${joinedSongCountExpression} AS song_count,
       (LOWER(ANY_VALUE(a.name)) = LOWER(?)) * 15 +
       (ANY_VALUE(a.name) LIKE ?) * 8 +
       (ANY_VALUE(a.alias) LIKE ?) * 6 +
@@ -411,9 +416,8 @@ const searchArtists = async (keyword, { limit, offset, includeDeleted }) => {
       ${tokenAlbumSongScoreClause} +
       (ANY_VALUE(a.follow_count) * 0.01) AS score
     FROM artists a
-    LEFT JOIN songs s
-      ON s.artist_id = a.id
-      ${songDeletedFilter}
+    LEFT JOIN songs s ON s.artist_id = a.id
+    LEFT JOIN albums al_song_visibility ON al_song_visibility.id = s.album_id
     WHERE 1=1
     ${tokenFilterClause ? `AND ${tokenFilterClause}` : ""}
     ${deletedFilter}
@@ -581,13 +585,15 @@ export const searchEntities = async (keyword, options) => {
     searchAlbums(keyword, options),
   ]);
 
+  const total = songs.length + artists.length + albums.length;
+
   return {
     items: {
       songs,
       artists,
       albums,
     },
-    meta: buildPaginationMeta(options.page, options.limit),
+    meta: buildPaginationMeta(options.page, options.limit, total),
   };
 };
 
@@ -603,6 +609,8 @@ export const searchAdminEntities = async (keyword, options) => {
     searchUsers(keyword, options),
   ]);
 
+  const total = songs.length + artists.length + albums.length + users.length;
+
   return {
     items: {
       songs,
@@ -610,7 +618,7 @@ export const searchAdminEntities = async (keyword, options) => {
       albums,
       users,
     },
-    meta: buildPaginationMeta(options.page, options.limit),
+    meta: buildPaginationMeta(options.page, options.limit, total),
   };
 };
 
@@ -667,6 +675,15 @@ export const listSearchHistory = async (userId, { page, limit, offset }) => {
     };
   }
 
+  const [[countRow]] = await db.query(
+    `
+    SELECT COUNT(DISTINCT LOWER(keyword)) AS total
+    FROM search_history
+    WHERE user_id = ?
+    `,
+    [userId]
+  );
+
   const [rows] = await db.query(
     `
     SELECT sh.id, sh.keyword, sh.searched_at
@@ -689,7 +706,7 @@ export const listSearchHistory = async (userId, { page, limit, offset }) => {
 
   return {
     items: rows,
-    meta: buildPaginationMeta(page, limit, rows.length),
+    meta: buildPaginationMeta(page, limit, countRow?.total || 0),
   };
 };
 
