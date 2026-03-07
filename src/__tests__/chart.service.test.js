@@ -13,6 +13,7 @@ const {
   getWeeklyTop5,
   getNewReleaseChart,
   getZingChart,
+  getTop5ChartData,
 } = await import(
   "../services/chart.service.js"
 );
@@ -185,6 +186,156 @@ describe("chart.service zing chart realtime ranking", () => {
     expect(mockDb.query.mock.calls[0][1]).toEqual([1]);
     expect(result[0].period).toBe("total");
     expect(result[0].playCount).toBe(12345);
+  });
+});
+
+describe("chart.service top5 chart data", () => {
+  beforeEach(() => {
+    mockDb.query.mockReset();
+  });
+
+  it("returns a daily top 5 chart with 7 labels ending at today when today has data", async () => {
+    mockDb.query
+      .mockResolvedValueOnce([
+        [{ current_day: "2026-03-08", current_week_start: "2026-03-02" }],
+      ])
+      .mockResolvedValueOnce([[{ day_start: "2026-03-08" }]])
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 1,
+            title: "Daily Song",
+            cover_url: "daily.jpg",
+            duration: 200,
+            total_play_count: 500,
+            period_play_count: 25,
+            artist_id: 2,
+            artist_name: "Daily Artist",
+          },
+        ],
+      ])
+      .mockResolvedValueOnce([
+        [
+          { song_id: 1, period_start: "2026-03-07", play_count: 12 },
+          { song_id: 1, period_start: "2026-03-08", play_count: 25 },
+        ],
+      ]);
+
+    const result = await getTop5ChartData({ period: "day", limit: 5 });
+
+    expect(result.period).toBe("day");
+    expect(result.requestedPeriodStart).toBe("2026-03-08");
+    expect(result.effectivePeriodStart).toBe("2026-03-08");
+    expect(result.fallbackApplied).toBe(false);
+    expect(result.labels).toEqual([
+      "2026-03-02",
+      "2026-03-03",
+      "2026-03-04",
+      "2026-03-05",
+      "2026-03-06",
+      "2026-03-07",
+      "2026-03-08",
+    ]);
+    expect(result.songs[0]).toMatchObject({
+      rank: 1,
+      period: "day",
+      playCount: 500,
+      periodPlayCount: 25,
+    });
+    expect(result.songs[0].series).toEqual([0, 0, 0, 0, 0, 12, 25]);
+  });
+
+  it("falls back to the latest available day within the last 7 days when today has no listens", async () => {
+    mockDb.query
+      .mockResolvedValueOnce([
+        [{ current_day: "2026-03-08", current_week_start: "2026-03-02" }],
+      ])
+      .mockResolvedValueOnce([[{ day_start: "2026-03-06" }]])
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 9,
+            title: "Fallback Song",
+            cover_url: "fallback.jpg",
+            duration: 180,
+            total_play_count: 900,
+            period_play_count: 19,
+            artist_id: 4,
+            artist_name: "Fallback Artist",
+          },
+        ],
+      ])
+      .mockResolvedValueOnce([
+        [
+          { song_id: 9, period_start: "2026-03-02", play_count: 3 },
+          { song_id: 9, period_start: "2026-03-04", play_count: 7 },
+          { song_id: 9, period_start: "2026-03-06", play_count: 19 },
+        ],
+      ]);
+
+    const result = await getTop5ChartData({ period: "day" });
+
+    expect(result.effectivePeriodStart).toBe("2026-03-06");
+    expect(result.fallbackApplied).toBe(true);
+    expect(result.fallbackReason).toBe("latest_available_day_in_last_7_days");
+    expect(result.labels).toEqual([
+      "2026-02-28",
+      "2026-03-01",
+      "2026-03-02",
+      "2026-03-03",
+      "2026-03-04",
+      "2026-03-05",
+      "2026-03-06",
+    ]);
+    expect(result.songs[0].series).toEqual([0, 0, 3, 0, 7, 0, 19]);
+  });
+
+  it("returns weekly chart data for the latest available week", async () => {
+    mockDb.query
+      .mockResolvedValueOnce([
+        [{ current_day: "2026-03-08", current_week_start: "2026-03-02" }],
+      ])
+      .mockResolvedValueOnce([[{ week_start: "2026-03-02" }]])
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 3,
+            title: "Weekly Song",
+            cover_url: "weekly.jpg",
+            duration: 220,
+            total_play_count: 1500,
+            period_play_count: 70,
+            artist_id: 6,
+            artist_name: "Weekly Artist",
+          },
+        ],
+      ])
+      .mockResolvedValueOnce([
+        [
+          { song_id: 3, period_start: "2026-03-02", play_count: 10 },
+          { song_id: 3, period_start: "2026-03-03", play_count: 11 },
+          { song_id: 3, period_start: "2026-03-04", play_count: 12 },
+          { song_id: 3, period_start: "2026-03-05", play_count: 13 },
+          { song_id: 3, period_start: "2026-03-06", play_count: 8 },
+          { song_id: 3, period_start: "2026-03-07", play_count: 9 },
+          { song_id: 3, period_start: "2026-03-08", play_count: 7 },
+        ],
+      ]);
+
+    const result = await getTop5ChartData({ period: "week", limit: 5 });
+
+    expect(result.period).toBe("week");
+    expect(result.effectivePeriodStart).toBe("2026-03-02");
+    expect(result.labels).toEqual([
+      "2026-03-02",
+      "2026-03-03",
+      "2026-03-04",
+      "2026-03-05",
+      "2026-03-06",
+      "2026-03-07",
+      "2026-03-08",
+    ]);
+    expect(result.songs[0].series).toEqual([10, 11, 12, 13, 8, 9, 7]);
   });
 });
 

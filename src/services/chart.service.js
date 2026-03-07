@@ -5,6 +5,9 @@ import { buildSongPublicVisibilityCondition } from "../utils/song-visibility.js"
 const TOP50_BY_GENRE_CACHE_TTL_MS = 60 * 1000;
 const ZING_CHART_PERIODS = new Set(["day", "week", "total"]);
 const MAX_ZING_CHART_LIMIT = 100;
+const TOP_CHART_PERIODS = new Set(["day", "week"]);
+const MAX_TOP_CHART_LIMIT = 5;
+const TOP_CHART_SERIES_DAYS = 7;
 let top50ByGenreCache = null;
 
 const getCachedTop50ByGenre = () => {
@@ -339,6 +342,248 @@ const getLatestAvailableWeekStart = async () => {
   `);
 
   return rows[0]?.week_start ?? null;
+};
+
+const normalizeTopChartLimit = (limit = 5) =>
+  Math.min(MAX_TOP_CHART_LIMIT, Math.max(1, Number(limit) || 5));
+
+const normalizeTopChartPeriod = (period = "day") =>
+  TOP_CHART_PERIODS.has(period) ? period : "day";
+
+const formatDateOnly = (value) => {
+  if (!value) return null;
+
+  if (typeof value === "string") {
+    return value.slice(0, 10);
+  }
+
+  return new Date(value).toISOString().slice(0, 10);
+};
+
+const shiftDateString = (dateString, days) => {
+  const date = new Date(`${dateString}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+};
+
+const buildDateLabels = (startDate, count = TOP_CHART_SERIES_DAYS) =>
+  Array.from({ length: count }, (_, index) => shiftDateString(startDate, index));
+
+const getCurrentChartAnchors = async () => {
+  const [rows] = await db.query(`
+    SELECT
+      CURDATE() AS current_day,
+      DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AS current_week_start
+  `);
+
+  return {
+    currentDay: formatDateOnly(rows[0]?.current_day),
+    currentWeekStart: formatDateOnly(rows[0]?.current_week_start),
+  };
+};
+
+const getLatestAvailableDayStart = async (
+  windowDays = TOP_CHART_SERIES_DAYS
+) => {
+  const [rows] = await db.query(
+    `
+    SELECT MAX(period_start) AS day_start
+    FROM song_play_stats
+    WHERE period_type = 'day'
+      AND period_start BETWEEN DATE_SUB(CURDATE(), INTERVAL ? DAY) AND CURDATE()
+    `,
+    [Math.max(0, Number(windowDays) - 1)]
+  );
+
+  return formatDateOnly(rows[0]?.day_start);
+};
+
+const getTopSongsByPeriodStart = async ({
+  period,
+  periodStart,
+  limit = 5,
+} = {}) => {
+  if (!periodStart) {
+    return [];
+  }
+
+  const [rows] = await db.query(
+    `
+    SELECT
+      s.id,
+      s.title,
+      s.cover_url,
+      s.duration,
+      s.play_count AS total_play_count,
+      sp.play_count AS period_play_count,
+      ar.id AS artist_id,
+      ar.name AS artist_name
+    FROM song_play_stats sp
+    JOIN songs s ON s.id = sp.song_id
+    LEFT JOIN artists ar ON ar.id = s.artist_id
+    WHERE sp.period_type = ?
+      AND sp.period_start = ?
+      AND ${buildSongPublicVisibilityCondition("s")}
+      AND (ar.id IS NULL OR ar.is_deleted = 0)
+    ORDER BY sp.play_count DESC, s.play_count DESC, s.id DESC
+    LIMIT ?
+    `,
+    [period, periodStart, limit]
+  );
+
+  return rows;
+};
+
+const getDailyStatsForSongs = async ({
+  songIds = [],
+  startDate,
+  endDate,
+} = {}) => {
+  if (!songIds.length || !startDate || !endDate) {
+    return [];
+  }
+
+  const placeholders = songIds.map(() => "?").join(",");
+  const [rows] = await db.query(
+    `
+    SELECT
+      song_id,
+      period_start,
+      play_count
+    FROM song_play_stats
+    WHERE period_type = 'day'
+      AND song_id IN (${placeholders})
+      AND period_start BETWEEN ? AND ?
+    ORDER BY period_start ASC
+    `,
+    [...songIds, startDate, endDate]
+  );
+
+  return rows.map((row) => ({
+    ...row,
+    period_start: formatDateOnly(row.period_start),
+  }));
+};
+
+const mapTopChartSongs = ({ topRows = [], labels = [], statsRows = [], period }) => {
+  const statsMap = new Map(
+    statsRows.map((row) => [
+      `${row.song_id}:${formatDateOnly(row.period_start)}`,
+      Number(row.play_count) || 0,
+    ])
+  );
+
+  return topRows.map((row, index) => ({
+    rank: index + 1,
+    song: {
+      id: row.id,
+      title: row.title,
+      cover_url: row.cover_url,
+      duration: row.duration,
+    },
+    artist: row.artist_id
+      ? {
+          id: row.artist_id,
+          name: row.artist_name,
+        }
+      : null,
+    playCount: Number(row.total_play_count || 0),
+    periodPlayCount: Number(row.period_play_count || 0),
+    period,
+    series: labels.map(
+      (label) => statsMap.get(`${row.id}:${label}`) ?? 0
+    ),
+  }));
+};
+
+const resolveTopChartContext = async (period) => {
+  const normalizedPeriod = normalizeTopChartPeriod(period);
+  const { currentDay, currentWeekStart } = await getCurrentChartAnchors();
+
+  if (normalizedPeriod === "week") {
+    const effectivePeriodStart = formatDateOnly(await getLatestAvailableWeekStart());
+
+    return {
+      period: normalizedPeriod,
+      requestedPeriodStart: currentWeekStart,
+      effectivePeriodStart,
+      fallbackApplied:
+        Boolean(effectivePeriodStart) && effectivePeriodStart !== currentWeekStart,
+      fallbackReason:
+        effectivePeriodStart && effectivePeriodStart !== currentWeekStart
+          ? "latest_available_week"
+          : null,
+      labels: effectivePeriodStart
+        ? buildDateLabels(effectivePeriodStart, TOP_CHART_SERIES_DAYS)
+        : [],
+    };
+  }
+
+  const effectivePeriodStart = await getLatestAvailableDayStart(
+    TOP_CHART_SERIES_DAYS
+  );
+
+  return {
+    period: normalizedPeriod,
+    requestedPeriodStart: currentDay,
+    effectivePeriodStart,
+    fallbackApplied:
+      Boolean(effectivePeriodStart) && effectivePeriodStart !== currentDay,
+    fallbackReason:
+      effectivePeriodStart && effectivePeriodStart !== currentDay
+        ? "latest_available_day_in_last_7_days"
+        : null,
+    labels: effectivePeriodStart
+      ? buildDateLabels(
+          shiftDateString(effectivePeriodStart, -(TOP_CHART_SERIES_DAYS - 1)),
+          TOP_CHART_SERIES_DAYS
+        )
+      : [],
+  };
+};
+
+export const getTop5ChartData = async ({ period = "day", limit = 5 } = {}) => {
+  const normalizedLimit = normalizeTopChartLimit(limit);
+  const context = await resolveTopChartContext(period);
+
+  if (!context.effectivePeriodStart) {
+    return {
+      ...context,
+      limit: normalizedLimit,
+      songs: [],
+    };
+  }
+
+  const topRows = await getTopSongsByPeriodStart({
+    period: context.period,
+    periodStart: context.effectivePeriodStart,
+    limit: normalizedLimit,
+  });
+
+  if (!topRows.length) {
+    return {
+      ...context,
+      limit: normalizedLimit,
+      songs: [],
+    };
+  }
+
+  const statsRows = await getDailyStatsForSongs({
+    songIds: topRows.map((row) => row.id),
+    startDate: context.labels[0],
+    endDate: context.labels[context.labels.length - 1],
+  });
+
+  return {
+    ...context,
+    limit: normalizedLimit,
+    songs: mapTopChartSongs({
+      topRows,
+      labels: context.labels,
+      statsRows,
+      period: context.period,
+    }),
+  };
 };
 
 const getTopSongsFallback = async (limit) => {

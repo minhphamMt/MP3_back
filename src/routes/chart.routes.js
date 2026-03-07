@@ -8,6 +8,7 @@ router.get("/new-release", chartController.newReleaseChart);
 router.get("/top-100", chartController.top100Chart);
 router.get("/zing/series", chartController.zingChartSeries);
 router.get("/regions", getRegionCharts);
+router.get("/top5", chartController.getTop5Chart);
 router.get("/weekly/top5", chartController.getWeeklyTop5Songs);
 router.get("/weekly/series", chartController.getWeeklyTop5Series);
 router.get("/top-50/genres", chartController.getTop50ByGenres);

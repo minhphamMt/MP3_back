@@ -527,6 +527,20 @@ const getWeekStartDate = () => {
     DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
   `;
 };
+
+const upsertSongPlayStat = async (
+  connection,
+  { songId, periodType, periodStartExpression }
+) => {
+  await connection.query(
+    `
+    INSERT INTO song_play_stats (song_id, period_type, period_start, play_count)
+    VALUES (?, ?, ${periodStartExpression}, 1)
+    ON DUPLICATE KEY UPDATE play_count = play_count + 1
+    `,
+    [songId, periodType]
+  );
+};
 export const recordSongPlay = async (songId, userId, duration = null) => {
   /**
    * 0️⃣ CHẶN NHẠC CHƯA PHÁT HÀNH
@@ -570,50 +584,55 @@ export const recordSongPlay = async (songId, userId, duration = null) => {
   /**
    * 3️⃣ tăng play_count (tổng)
    */
-  const [result] = await db.query(
-    "UPDATE songs SET play_count = play_count + 1 WHERE id = ?",
-    [songId]
-  );
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
 
-  if (!result.affectedRows) {
-    throw createError(404, "Song not found");
+    const [result] = await connection.query(
+      "UPDATE songs SET play_count = play_count + 1 WHERE id = ?",
+      [songId]
+    );
+
+    if (!result.affectedRows) {
+      throw createError(404, "Song not found");
+    }
+
+    /**
+     * 4️⃣ thống kê theo NGÀY
+     * - mỗi bài chỉ có 1 record / ngày
+     * - đủ điều kiện nghe lần tiếp theo thì cộng dồn play_count
+     */
+    await upsertSongPlayStat(connection, {
+      songId,
+      periodType: "day",
+      periodStartExpression: "CURDATE()",
+    });
+
+    /**
+     * 5️⃣ thống kê theo TUẦN
+     * - mỗi bài chỉ có 1 record / tuần
+     * - trong cùng tuần chỉ tăng play_count của record đó
+     */
+    await upsertSongPlayStat(connection, {
+      songId,
+      periodType: "week",
+      periodStartExpression: getWeekStartDate(),
+    });
+
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
   }
 
   /**
-   * 4️⃣ lưu listening history
+   * 6️⃣ lưu listening history
    */
   if (userId) {
     await recordListeningHistory(userId, songId, duration);
   }
-
-  /**
-   * 5️⃣ thống kê theo NGÀY
-   */
-  await db.query(
-    `
-    INSERT INTO song_play_stats (song_id, period_type, period_start, play_count)
-    VALUES (?, 'day', CURDATE(), 1)
-    ON DUPLICATE KEY UPDATE play_count = play_count + 1
-    `,
-    [songId]
-  );
-
-  /**
-   * 6️⃣ thống kê theo TUẦN
-   */
-  await db.query(
-    `
-    INSERT INTO song_play_stats (song_id, period_type, period_start, play_count)
-    VALUES (
-      ?,
-      'week',
-      DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY),
-      1
-    )
-    ON DUPLICATE KEY UPDATE play_count = play_count + 1
-    `,
-    [songId]
-  );
 
   /**
    * 7️⃣ trả kết quả

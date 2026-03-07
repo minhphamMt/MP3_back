@@ -4,7 +4,8 @@ import {
   getTop100Chart,
   getTopWeeklySongs,
   getWeeklyTop5,
-  getTop50SongsByGenres 
+  getTop50SongsByGenres,
+  getTop5ChartData,
 } from "../services/chart.service.js";
 import { successResponse } from "../utils/response.js";
 import { getSongDailySeries } from "../services/chart.service.js";
@@ -84,6 +85,21 @@ export const getRegionCharts = async (req, res, next) => {
     return successResponse(res, data);
   } catch (err) {
     return next(err);
+  }
+};
+export const getTop5Chart = async (req, res, next) => {
+  try {
+    const period =
+      typeof req.query.period === "string" ? req.query.period.trim() : "day";
+    const limit = Math.min(
+      5,
+      Math.max(1, Number.parseInt(req.query.limit, 10) || 5)
+    );
+
+    const data = await getTop5ChartData({ period, limit });
+    return successResponse(res, data);
+  } catch (error) {
+    return next(error);
   }
 };
 export const getWeeklyTop5Songs = async (req, res, next) => {
