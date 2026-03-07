@@ -1,4 +1,5 @@
 import db from "../config/db.js";
+import { buildSongPublicVisibilityCondition } from "../utils/song-visibility.js";
 
 /**
  * =========================
@@ -314,8 +315,7 @@ const getQuerySong = async (songId) => {
     LEFT JOIN song_genres sg ON sg.song_id = s.id
     LEFT JOIN genres g ON g.id = sg.genre_id
     WHERE s.id = ?
-      AND s.status = 'approved'
-      AND s.is_deleted = 0
+      AND ${buildSongPublicVisibilityCondition("s")}
     GROUP BY s.id, s.title, s.artist_id, s.album_id
     LIMIT 1
     `,
@@ -380,8 +380,7 @@ const getAllCandidates = async (songId, userId, querySong) => {
     LEFT JOIN song_embeddings ae ON ae.song_id = s.id AND ae.type = 'audio'
     LEFT JOIN song_embeddings me ON me.song_id = s.id AND me.type = 'metadata'
     WHERE s.id != ?
-      AND s.status = 'approved'
-      AND s.is_deleted = 0
+      AND ${buildSongPublicVisibilityCondition("s")}
       AND (
         ? IS NULL OR s.id NOT IN (
           SELECT song_id
@@ -439,8 +438,7 @@ const getFallbackCandidates = async (query, excludeSongId, limit) => {
     LEFT JOIN song_genres sg ON sg.song_id = s.id
     LEFT JOIN genres g ON g.id = sg.genre_id
     WHERE s.id != ?
-      AND s.status = 'approved'
-      AND s.is_deleted = 0
+      AND ${buildSongPublicVisibilityCondition("s")}
     GROUP BY s.id, s.title, s.artist_id, s.album_id, s.play_count
     ORDER BY same_artist DESC, same_album DESC, s.play_count DESC, s.id ASC
     LIMIT ?;

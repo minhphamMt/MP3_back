@@ -1,5 +1,9 @@
 import db from "../config/db.js";
 import { buildPaginationMeta } from "../utils/pagination.js";
+import {
+  buildAlbumReleasedCondition,
+  buildSongPublicVisibilityCondition,
+} from "../utils/song-visibility.js";
 
 const escapeRegex = (value = "") =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -173,10 +177,7 @@ const searchSongs = async (keyword, { limit, offset, userId }) => {
       JOIN artists ar ON ar.id = sa.artist_id
       GROUP BY sa.song_id
     ) sa_names ON sa_names.song_id = s.id
-    WHERE s.status = 'approved'
-    AND s.is_deleted = 0
-    AND s.release_date IS NOT NULL
-      AND s.release_date <= NOW()
+    WHERE ${buildSongPublicVisibilityCondition("s", { albumAlias: "al" })}
       ${tokenFilterClause ? `AND ${tokenFilterClause}` : ""}
     ORDER BY score DESC
     LIMIT ? OFFSET ?
@@ -257,20 +258,10 @@ const searchArtists = async (keyword, { limit, offset, includeDeleted }) => {
   const keywordTokens = tokenizeKeyword(normalizedKeyword);
   const songVisibilityFilter = includeDeleted
     ? ""
-    : "AND s.is_deleted = 0 AND s.status = 'approved' AND s.release_date IS NOT NULL AND s.release_date <= NOW()";
+    : `AND ${buildSongPublicVisibilityCondition("s")}`;
   const albumVisibilityFilter = includeDeleted
     ? ""
-    : `AND al.is_deleted = 0 AND (
-        (al.release_date IS NOT NULL AND al.release_date <= NOW())
-        OR EXISTS (
-          SELECT 1 FROM songs s2
-          WHERE s2.album_id = al.id
-            AND s2.status = 'approved'
-            AND s2.is_deleted = 0
-            AND s2.release_date IS NOT NULL
-            AND s2.release_date <= NOW()
-        )
-      )`;
+    : `AND ${buildAlbumReleasedCondition("al")}`;
 
   const tokenFilterClause = keywordTokens.length
     ? keywordTokens
@@ -363,7 +354,9 @@ const searchArtists = async (keyword, { limit, offset, includeDeleted }) => {
   const tokenAlbumSongScoreParams = keywordTokens.map((token) => `%${token}%`);
 
   const deletedFilter = includeDeleted ? "" : "AND a.is_deleted = 0";
-  const songDeletedFilter = includeDeleted ? "" : "AND s.is_deleted = 0";
+  const songDeletedFilter = includeDeleted
+    ? ""
+    : `AND ${buildSongPublicVisibilityCondition("s")}`;
 
   const [rows] = await db.query(
     `
@@ -492,7 +485,7 @@ const searchAlbums = async (
   const keywordTokens = tokenizeKeyword(normalizedKeyword);
   const songVisibilityFilter = includeDeleted
     ? ""
-    : "AND s.is_deleted = 0 AND s.status = 'approved' AND s.release_date IS NOT NULL AND s.release_date <= NOW()";
+    : `AND ${buildSongPublicVisibilityCondition("s")}`;
   const tokenFilterClause = keywordTokens.length
     ? keywordTokens
         .map(
@@ -538,18 +531,7 @@ const searchAlbums = async (
   const deletedFilter = includeDeleted ? "" : "AND al.is_deleted = 0";
   const releaseFilter = includeUnreleased
     ? ""
-    : `AND (
-        (al.release_date IS NOT NULL AND al.release_date <= NOW())
-        OR EXISTS (
-          SELECT 1
-          FROM songs s
-          WHERE s.album_id = al.id
-            AND s.status = 'approved'
-            AND s.is_deleted = 0
-            AND s.release_date IS NOT NULL
-            AND s.release_date <= NOW()
-        )
-      )`;
+    : `AND ${buildAlbumReleasedCondition("al")}`;
   const [rows] = await db.query(
     `
     SELECT

@@ -1,4 +1,5 @@
 import db from "../config/db.js";
+import { buildSongPublicVisibilityCondition } from "../utils/song-visibility.js";
 
 const createError = (status, message) => {
   const error = new Error(message);
@@ -104,10 +105,7 @@ export const getPlaylistById = async (id) => {
     JOIN songs s ON s.id = ps.song_id
     LEFT JOIN albums al ON al.id = s.album_id
     WHERE ps.playlist_id = ?
-    AND s.is_deleted = 0
-      AND s.status = 'approved'
-      AND s.release_date IS NOT NULL
-      AND s.release_date <= NOW()
+    AND ${buildSongPublicVisibilityCondition("s", { albumAlias: "al" })}
     ORDER BY ps.position ASC
     `,
     [id]
@@ -190,7 +188,13 @@ export const addSongToPlaylist = async (
   await ensurePlaylistOwner(playlistId, userId);
 
   const [songRows] = await db.query(
-    "SELECT id FROM songs WHERE id = ? AND is_deleted = 0",
+    `
+    SELECT s.id
+    FROM songs s
+    LEFT JOIN albums al ON al.id = s.album_id
+    WHERE s.id = ?
+      AND ${buildSongPublicVisibilityCondition("s", { albumAlias: "al" })}
+    `,
     [songId]
   );
   if (!songRows[0]) {

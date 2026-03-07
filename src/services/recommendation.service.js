@@ -1,4 +1,5 @@
 import db from "../config/db.js";
+import { buildSongPublicVisibilityCondition } from "../utils/song-visibility.js";
 
 const DEFAULT_LIMIT = 20;
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -74,10 +75,7 @@ const getColdStartPopularSongs = async (limit) => {
       'popular' AS source
     FROM songs s
     LEFT JOIN artists ar ON ar.id = s.artist_id
-    WHERE s.is_deleted = 0
-      AND s.status = 'approved'
-      AND s.release_date IS NOT NULL
-      AND s.release_date <= NOW()
+    WHERE ${buildSongPublicVisibilityCondition("s")}
     ORDER BY s.play_count DESC, s.release_date DESC
     LIMIT ?;
   `,
@@ -101,10 +99,7 @@ const getColdStartFreshSongs = async (limit) => {
       'fresh' AS source
     FROM songs s
     LEFT JOIN artists ar ON ar.id = s.artist_id
-    WHERE s.is_deleted = 0
-      AND s.status = 'approved'
-      AND s.release_date IS NOT NULL
-      AND s.release_date <= NOW()
+    WHERE ${buildSongPublicVisibilityCondition("s")}
     ORDER BY s.release_date DESC, s.play_count DESC
     LIMIT ?;
   `,

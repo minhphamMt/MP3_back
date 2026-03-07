@@ -22,6 +22,29 @@ import { getArtistByUserId, getArtistByUserIdWithDeleted } from "../services/art
 import { getAlbumById } from "../services/album.service.js";
 import { uploadMediaFile } from "../services/storage.service.js";
 
+const normalizeNullableId = (value) => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+
+  const normalized = String(value).trim();
+  if (!normalized) return null;
+
+  const parsed = Number(normalized);
+  if (Number.isInteger(parsed)) {
+    return parsed > 0 ? parsed : null;
+  }
+
+  return value;
+};
+
+const normalizeNullableDate = (value) => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+
+  const normalized = String(value).trim();
+  return normalized || null;
+};
+
 const normalizeSongPayload = (body = {}) => {
   const payload = { ...body };
 
@@ -44,6 +67,14 @@ const normalizeSongPayload = (body = {}) => {
     payload.artist_ids = payload.artistIds;
   }
 
+  if (payload.albumId !== undefined && payload.album_id === undefined) {
+    payload.album_id = payload.albumId;
+  }
+
+  if (payload.releaseDate !== undefined && payload.release_date === undefined) {
+    payload.release_date = payload.releaseDate;
+  }
+
   if (payload.artist_ids !== undefined) {
     const artistIds = Array.isArray(payload.artist_ids)
       ? payload.artist_ids
@@ -54,6 +85,14 @@ const normalizeSongPayload = (body = {}) => {
     payload.artist_ids = artistIds
       .map((item) => Number(item))
       .filter((item) => Number.isInteger(item) && item > 0);
+  }
+
+  if (payload.album_id !== undefined) {
+    payload.album_id = normalizeNullableId(payload.album_id);
+  }
+
+  if (payload.release_date !== undefined) {
+    payload.release_date = normalizeNullableDate(payload.release_date);
   }
 
   return payload;
@@ -216,12 +255,16 @@ export const createSongHandler = async (req, res, next) => {
       }
 
       payload.artist_id = artist.id;
-      payload.artist_ids = [artist.id, ...(payload.artist_ids || []).filter((id) => id !== artist.id)];
+      payload.artist_ids = [
+        artist.id,
+        ...(payload.artist_ids || []).filter((id) => id !== artist.id),
+      ];
       payload.status = SONG_STATUS.PENDING;
 
-      if (payload.album_id) {
+      if (payload.album_id !== undefined && payload.album_id !== null) {
         const album = await getAlbumById(payload.album_id, {
           includeSongs: false,
+          includeUnreleased: true,
         });
         if (!album) {
           return errorResponse(res, "Album not found", 404);
@@ -263,11 +306,11 @@ export const updateSongHandler = async (req, res, next) => {
       delete payload.artist_id;
       delete payload.artist_ids;
 
-      if (payload.album_id) {
-       const album = await getAlbumById(payload.album_id, {
+      if (payload.album_id !== undefined && payload.album_id !== null) {
+        const album = await getAlbumById(payload.album_id, {
           includeSongs: false,
-          includeUnreleased: true, 
-});
+          includeUnreleased: true,
+        });
 
         if (!album) {
           return errorResponse(res, "Album not found", 404);

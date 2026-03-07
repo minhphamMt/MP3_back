@@ -2,6 +2,7 @@ import db from "../config/db.js";
 import ROLES from "../constants/roles.js";
 import { buildPaginationMeta } from "../utils/pagination.js";
 import { generateZingId } from "../utils/Zing-id.js";
+import { buildSongPublicVisibilityCondition } from "../utils/song-visibility.js";
 
 const normalizeGenres = (genres) => {
   if (!genres) return [];
@@ -193,8 +194,7 @@ export const getArtistById = async (
   }
 
   if (!includeUnreleased) {
-    songFilters.push("s.release_date IS NOT NULL");
-    songFilters.push("s.release_date <= NOW()");
+    songFilters.push(buildSongPublicVisibilityCondition("s", { albumAlias: "al" }));
   }
   
   if (normalizedGenres.length > 0) {

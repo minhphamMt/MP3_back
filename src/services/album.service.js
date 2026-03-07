@@ -1,6 +1,7 @@
 import db from "../config/db.js";
 import ROLES from "../constants/roles.js";
 import { buildPaginationMeta } from "../utils/pagination.js";
+import { buildSongPublicVisibilityCondition } from "../utils/song-visibility.js";
 
 const createError = (status, message) => {
   const error = new Error(message);
@@ -143,9 +144,9 @@ if (includeSongs) {
 const songFilters = [
   "s.album_id = ?",
   "s.is_deleted = 0",
-  includeUnreleased ? "1=1" : "s.status = 'approved'",
-  includeUnreleased ? "1=1" : "s.release_date IS NOT NULL",
-  includeUnreleased ? "1=1" : "s.release_date <= NOW()",
+  includeUnreleased
+    ? "1=1"
+    : buildSongPublicVisibilityCondition("s", { albumAlias: "al" }),
 ];
 
 

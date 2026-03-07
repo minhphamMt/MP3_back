@@ -1,5 +1,6 @@
 import db from "../config/db.js";
 import { REGION_GENRES } from "../constants/region-map.js";
+import { buildSongPublicVisibilityCondition } from "../utils/song-visibility.js";
 
 const TOP50_BY_GENRE_CACHE_TTL_MS = 60 * 1000;
 let top50ByGenreCache = null;
@@ -36,11 +37,8 @@ export const getZingChart = async () => {
       ar.name AS artist_name
     FROM songs s
     LEFT JOIN artists ar ON ar.id = s.artist_id
-    WHERE s.status = 'approved'
-    AND s.is_deleted = 0
+    WHERE ${buildSongPublicVisibilityCondition("s")}
     AND (ar.id IS NULL OR ar.is_deleted = 0)
-    AND s.release_date IS NOT NULL
-    AND s.release_date <= NOW()
     ORDER BY s.play_count DESC
     LIMIT 10
   `);
@@ -84,12 +82,8 @@ export const getNewReleaseChart = async ({ page = 1, limit = 20 } = {}) => {
     FROM songs s
     LEFT JOIN artists ar ON ar.id = s.artist_id
     LEFT JOIN albums al ON al.id = s.album_id
-    WHERE s.status = 'approved'
-    AND s.is_deleted = 0
+    WHERE ${buildSongPublicVisibilityCondition("s", { albumAlias: "al" })}
     AND (ar.id IS NULL OR ar.is_deleted = 0)
-    AND (al.id IS NULL OR al.is_deleted = 0)
-    AND s.release_date IS NOT NULL
-    AND s.release_date <= NOW()
     ORDER BY s.release_date DESC
     LIMIT ? OFFSET ?
   `, [safeLimit, offset]);
@@ -138,11 +132,8 @@ export const getTop100Chart = async () => {
       ar.name AS artist_name
     FROM songs s
     LEFT JOIN artists ar ON ar.id = s.artist_id
-    WHERE s.status = 'approved'
-      AND s.is_deleted = 0
+    WHERE ${buildSongPublicVisibilityCondition("s")}
       AND (ar.id IS NULL OR ar.is_deleted = 0)
-      AND s.release_date IS NOT NULL
-      AND s.release_date <= NOW()
     ORDER BY s.play_count DESC
     LIMIT 100
   `);
@@ -208,12 +199,8 @@ export const getRegionChart = async (regionKey, limit = 5) => {
     LEFT JOIN artists ar ON ar.id = s.artist_id
     LEFT JOIN albums al ON al.id = s.album_id
     WHERE g.name IN (${placeholders})
-      AND s.status = 'approved'
-      AND s.is_deleted = 0
+      AND ${buildSongPublicVisibilityCondition("s", { albumAlias: "al" })}
       AND (ar.id IS NULL OR ar.is_deleted = 0)
-      AND (al.id IS NULL OR al.is_deleted = 0)
-      AND s.release_date IS NOT NULL
-      AND s.release_date <= NOW()
     GROUP BY s.id
     ORDER BY s.play_count DESC
     LIMIT ?;
@@ -285,11 +272,8 @@ const getTopSongsFallback = async (limit) => {
       s.play_count AS weekly_play_count
     FROM songs s
     JOIN artists a ON a.id = s.artist_id
-    WHERE s.status = 'approved'
-      AND s.is_deleted = 0
+    WHERE ${buildSongPublicVisibilityCondition("s")}
       AND a.is_deleted = 0
-      AND s.release_date IS NOT NULL
-      AND s.release_date <= NOW()
       AND s.release_date >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)
     ORDER BY s.play_count DESC
     LIMIT ?
@@ -320,11 +304,8 @@ const getTopSongsFallback = async (limit) => {
       s.play_count AS weekly_play_count
     FROM songs s
     JOIN artists a ON a.id = s.artist_id
-    WHERE s.status = 'approved'
-      AND s.is_deleted = 0
+    WHERE ${buildSongPublicVisibilityCondition("s")}
       AND a.is_deleted = 0
-      AND s.release_date IS NOT NULL
-      AND s.release_date <= NOW()
       ${exclusionClause}
     ORDER BY s.play_count DESC
     LIMIT ?
@@ -356,11 +337,8 @@ export const getTopWeeklySongs = async (limit = 5) => {
     JOIN artists a ON a.id = s.artist_id
     WHERE sp.period_type = 'week'
       AND sp.period_start = ?
-      AND s.status = 'approved'
-      AND s.is_deleted = 0
+      AND ${buildSongPublicVisibilityCondition("s")}
       AND a.is_deleted = 0
-      AND s.release_date IS NOT NULL
-      AND s.release_date <= NOW()
     ORDER BY sp.play_count DESC
     LIMIT ?
     `,
@@ -416,7 +394,7 @@ export const getWeeklyTop5 = async () => {
       ON sp.song_id = w.song_id
       AND sp.period_type = 'day'
       AND sp.period_start = d.date
-      WHERE s.is_deleted = 0
+      WHERE ${buildSongPublicVisibilityCondition("s")}
       AND a.is_deleted = 0
     ORDER BY w.song_id, d.date ASC
   `, [weekStart, weekStart]);
@@ -471,12 +449,8 @@ export const getTop50SongsByGenres = async () => {
       JOIN genres g ON g.id = sg.genre_id
       LEFT JOIN artists ar ON ar.id = s.artist_id
       LEFT JOIN albums al ON al.id = s.album_id
-      WHERE s.status = 'approved'
-        AND s.is_deleted = 0
+      WHERE ${buildSongPublicVisibilityCondition("s", { albumAlias: "al" })}
         AND (ar.id IS NULL OR ar.is_deleted = 0)
-        AND (al.id IS NULL OR al.is_deleted = 0)
-        AND s.release_date IS NOT NULL
-        AND s.release_date <= NOW()
     ) ranked
     WHERE ranked.genre_song_count >= 50
       AND ranked.rank_in_genre <= 50

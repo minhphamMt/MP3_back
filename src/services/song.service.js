@@ -2,6 +2,7 @@ import db from "../config/db.js";
 import ROLES from "../constants/roles.js";
 import SONG_STATUS from "../constants/song-status.js";
 import { recordListeningHistory } from "./history.service.js";
+import { buildSongPublicVisibilityCondition } from "../utils/song-visibility.js";
 
 const createError = (status, message) => {
   const error = new Error(message);
@@ -40,6 +41,29 @@ const normalizeArtistIds = (artistIds, fallbackArtistId) => {
     .filter((item) => Number.isInteger(item) && item > 0);
 
   return unique;
+};
+
+const normalizeNullableId = (value) => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+
+  const normalized = String(value).trim();
+  if (!normalized) return null;
+
+  const parsed = Number(normalized);
+  if (Number.isInteger(parsed)) {
+    return parsed > 0 ? parsed : null;
+  }
+
+  return value;
+};
+
+const normalizeNullableDate = (value) => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+
+  const normalized = String(value).trim();
+  return normalized || null;
 };
 
 const attachSongArtists = async (songs = []) => {
@@ -213,13 +237,13 @@ export const updateSongMedia = async (songId, { audioPath, coverUrl }) => {
   }
 
   if (!updates.length) {
-    return getSongById(songId);
+    return getSongById(songId, { includeUnreleased: true });
   }
 
   params.push(songId);
 
   await db.query(`UPDATE songs SET ${updates.join(", ")} WHERE id = ?`, params);
-  return getSongById(songId);
+  return getSongById(songId, { includeUnreleased: true });
 };
 
 export const reviewSong = async (
@@ -268,7 +292,7 @@ await db.query(
 );
 
 
-  return getSongById(songId);
+  return getSongById(songId, { includeUnreleased: true });
 };
 export const listSongs = async ({
   page,
@@ -306,9 +330,7 @@ export const listSongs = async ({
   }
 
   if (!includeUnreleased) {
-    filters.push("s.status = 'approved'");
-    filters.push("s.release_date IS NOT NULL");
-    filters.push("s.release_date <= NOW()");
+    filters.push(buildSongPublicVisibilityCondition("s", { albumAlias: "al" }));
   }
   if (includeUnreleased && status) {
     filters.push("s.status = ?");
@@ -397,12 +419,7 @@ export const getSongById = async (
 
   // 🔐 USER → chỉ thấy approved
   if (!includeUnreleased) {
-    filters.push("s.status = 'approved'");
-  }
-
-  if (!includeUnreleased) {
-    filters.push("s.release_date IS NOT NULL");
-    filters.push("s.release_date <= NOW()");
+    filters.push(buildSongPublicVisibilityCondition("s", { albumAlias: "al" }));
   }
 
   const whereClause = `WHERE ${filters.join(" AND ")}`;
@@ -447,13 +464,11 @@ export const getSongById = async (
 export const likeSong = async (songId, userId) => {
   const [songs] = await db.query(
     `
-    SELECT id
-    FROM songs
-    WHERE id = ?
-      AND is_deleted = 0
-      AND status = 'approved'
-      AND release_date IS NOT NULL
-      AND release_date <= NOW()
+    SELECT s.id
+    FROM songs s
+    LEFT JOIN albums al ON al.id = s.album_id
+    WHERE s.id = ?
+      AND ${buildSongPublicVisibilityCondition("s", { albumAlias: "al" })}
     `,
     [songId]
   );
@@ -523,11 +538,9 @@ export const recordSongPlay = async (songId, userId, duration = null) => {
     `
     SELECT s.id
     FROM songs s
+    LEFT JOIN albums al ON al.id = s.album_id
     WHERE s.id = ?
-      AND s.is_deleted = 0
-      AND s.status = 'approved'
-      AND s.release_date IS NOT NULL
-      AND s.release_date <= NOW()
+      AND ${buildSongPublicVisibilityCondition("s", { albumAlias: "al" })}
     LIMIT 1
     `,
     [songId]
@@ -654,6 +667,9 @@ export const createSong = async ({
     throw createError(400, "artist_id or artist_ids is required");
   }
 
+  const normalizedAlbumId = normalizeNullableId(album_id);
+  const normalizedReleaseDate = normalizeNullableDate(release_date);
+
   const [result] = await db.query(
     `
     INSERT INTO songs (
@@ -672,19 +688,19 @@ export const createSong = async ({
     [
       title,
       normalizedArtistIds[0],
-      album_id || null,
+      normalizedAlbumId ?? null,
       duration || null,
       audio_path || null,
       cover_url || null,
       status,
-      release_date || null,
+      normalizedReleaseDate ?? null,
       zing_song_id || null,
     ]
   );
 
   await syncSongArtists(result.insertId, normalizedArtistIds);
   await syncSongGenres(result.insertId, genres);
-  return getSongById(result.insertId);
+  return getSongById(result.insertId, { includeUnreleased: true });
 };
 
 export const updateSong = async (
@@ -716,18 +732,21 @@ export const updateSong = async (
     throw createError(400, "Invalid status");
   }
 
+  const normalizedAlbumId = normalizeNullableId(album_id);
+  const normalizedReleaseDate = normalizeNullableDate(release_date);
+
   const fields = [];
   const values = [];
 
   const updatable = {
     title,
     artist_id: artist_id ?? normalizeArtistIds(artist_ids)[0],
-    album_id,
+    album_id: normalizedAlbumId,
     duration,
     audio_path,
     cover_url,
     status,
-    release_date,
+    release_date: normalizedReleaseDate,
     zing_song_id,
   };
 
@@ -761,7 +780,7 @@ export const updateSong = async (
     await syncSongArtists(id, normalizedArtistIds);
   }
 
-  return getSongById(id);
+  return getSongById(id, { includeUnreleased: true });
 };
 
 export const deleteSong = async (id) => {
@@ -890,7 +909,11 @@ export const listSongsByArtist = async (
       AND s.is_deleted = 0
       AND ${includeUnreleased ? "1=1" : "s.status = 'approved'"}
       AND ${includeUnreleased ? "1=1" : "s.audio_path IS NOT NULL"}
-      AND ${includeUnreleased ? "1=1" : "(s.release_date IS NULL OR s.release_date <= CURDATE())"}
+      AND ${
+        includeUnreleased
+          ? "1=1"
+          : buildSongPublicVisibilityCondition("s", { albumAlias: "al" })
+      }
     ORDER BY COALESCE(s.release_date, DATE(s.created_at)) DESC, s.id DESC
     `,
     [artistId]
@@ -937,10 +960,7 @@ export const getLikedSongs= async (userId) => {
     LEFT JOIN artists ar ON ar.id = s.artist_id
     LEFT JOIN albums al ON al.id = s.album_id
     WHERE sl.user_id = ?
-    AND s.is_deleted = 0
-    AND s.status = 'approved'
-      AND s.release_date IS NOT NULL
-      AND s.release_date <= NOW()
+    AND ${buildSongPublicVisibilityCondition("s", { albumAlias: "al" })}
     ORDER BY sl.liked_at DESC
     `,
     [userId]
