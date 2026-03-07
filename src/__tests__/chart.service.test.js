@@ -1,4 +1,9 @@
 import { jest } from "@jest/globals";
+import {
+  getCurrentDateInTimeZone,
+  getStartOfWeekDateString,
+  shiftDateString,
+} from "../utils/date-tz.js";
 
 const mockDb = {
   query: jest.fn(),
@@ -101,7 +106,7 @@ describe("chart.service zing chart realtime ranking", () => {
 
     expect(mockDb.query).toHaveBeenCalledWith(
       expect.stringContaining("FROM song_play_stats sp"),
-      ["day", 1]
+      ["day", expect.any(String), 1]
     );
     expect(result).toEqual([
       {
@@ -195,11 +200,12 @@ describe("chart.service top5 chart data", () => {
   });
 
   it("returns a daily top 5 chart with 7 labels ending at today when today has data", async () => {
+    const currentDay = getCurrentDateInTimeZone();
+    const labelStart = shiftDateString(currentDay, -6);
+    const previousDay = shiftDateString(currentDay, -1);
+
     mockDb.query
-      .mockResolvedValueOnce([
-        [{ current_day: "2026-03-08", current_week_start: "2026-03-02" }],
-      ])
-      .mockResolvedValueOnce([[{ day_start: "2026-03-08" }]])
+      .mockResolvedValueOnce([[{ day_start: currentDay }]])
       .mockResolvedValueOnce([
         [
           {
@@ -216,26 +222,20 @@ describe("chart.service top5 chart data", () => {
       ])
       .mockResolvedValueOnce([
         [
-          { song_id: 1, period_start: "2026-03-07", play_count: 12 },
-          { song_id: 1, period_start: "2026-03-08", play_count: 25 },
+          { song_id: 1, period_start: previousDay, play_count: 12 },
+          { song_id: 1, period_start: currentDay, play_count: 25 },
         ],
       ]);
 
     const result = await getTop5ChartData({ period: "day", limit: 5 });
 
     expect(result.period).toBe("day");
-    expect(result.requestedPeriodStart).toBe("2026-03-08");
-    expect(result.effectivePeriodStart).toBe("2026-03-08");
+    expect(result.requestedPeriodStart).toBe(currentDay);
+    expect(result.effectivePeriodStart).toBe(currentDay);
     expect(result.fallbackApplied).toBe(false);
-    expect(result.labels).toEqual([
-      "2026-03-02",
-      "2026-03-03",
-      "2026-03-04",
-      "2026-03-05",
-      "2026-03-06",
-      "2026-03-07",
-      "2026-03-08",
-    ]);
+    expect(result.labels).toEqual(
+      Array.from({ length: 7 }, (_, index) => shiftDateString(labelStart, index))
+    );
     expect(result.songs[0]).toMatchObject({
       rank: 1,
       period: "day",
@@ -246,11 +246,12 @@ describe("chart.service top5 chart data", () => {
   });
 
   it("falls back to the latest available day within the last 7 days when today has no listens", async () => {
+    const currentDay = getCurrentDateInTimeZone();
+    const effectiveDay = shiftDateString(currentDay, -2);
+    const labelStart = shiftDateString(effectiveDay, -6);
+
     mockDb.query
-      .mockResolvedValueOnce([
-        [{ current_day: "2026-03-08", current_week_start: "2026-03-02" }],
-      ])
-      .mockResolvedValueOnce([[{ day_start: "2026-03-06" }]])
+      .mockResolvedValueOnce([[{ day_start: effectiveDay }]])
       .mockResolvedValueOnce([
         [
           {
@@ -267,35 +268,30 @@ describe("chart.service top5 chart data", () => {
       ])
       .mockResolvedValueOnce([
         [
-          { song_id: 9, period_start: "2026-03-02", play_count: 3 },
-          { song_id: 9, period_start: "2026-03-04", play_count: 7 },
-          { song_id: 9, period_start: "2026-03-06", play_count: 19 },
+          { song_id: 9, period_start: shiftDateString(effectiveDay, -4), play_count: 3 },
+          { song_id: 9, period_start: shiftDateString(effectiveDay, -2), play_count: 7 },
+          { song_id: 9, period_start: effectiveDay, play_count: 19 },
         ],
       ]);
 
     const result = await getTop5ChartData({ period: "day" });
 
-    expect(result.effectivePeriodStart).toBe("2026-03-06");
+    expect(result.requestedPeriodStart).toBe(currentDay);
+    expect(result.effectivePeriodStart).toBe(effectiveDay);
     expect(result.fallbackApplied).toBe(true);
     expect(result.fallbackReason).toBe("latest_available_day_in_last_7_days");
-    expect(result.labels).toEqual([
-      "2026-02-28",
-      "2026-03-01",
-      "2026-03-02",
-      "2026-03-03",
-      "2026-03-04",
-      "2026-03-05",
-      "2026-03-06",
-    ]);
+    expect(result.labels).toEqual(
+      Array.from({ length: 7 }, (_, index) => shiftDateString(labelStart, index))
+    );
     expect(result.songs[0].series).toEqual([0, 0, 3, 0, 7, 0, 19]);
   });
 
   it("returns weekly chart data for the latest available week", async () => {
+    const currentDay = getCurrentDateInTimeZone();
+    const currentWeekStart = getStartOfWeekDateString(currentDay);
+
     mockDb.query
-      .mockResolvedValueOnce([
-        [{ current_day: "2026-03-08", current_week_start: "2026-03-02" }],
-      ])
-      .mockResolvedValueOnce([[{ week_start: "2026-03-02" }]])
+      .mockResolvedValueOnce([[{ week_start: currentWeekStart }]])
       .mockResolvedValueOnce([
         [
           {
@@ -312,29 +308,25 @@ describe("chart.service top5 chart data", () => {
       ])
       .mockResolvedValueOnce([
         [
-          { song_id: 3, period_start: "2026-03-02", play_count: 10 },
-          { song_id: 3, period_start: "2026-03-03", play_count: 11 },
-          { song_id: 3, period_start: "2026-03-04", play_count: 12 },
-          { song_id: 3, period_start: "2026-03-05", play_count: 13 },
-          { song_id: 3, period_start: "2026-03-06", play_count: 8 },
-          { song_id: 3, period_start: "2026-03-07", play_count: 9 },
-          { song_id: 3, period_start: "2026-03-08", play_count: 7 },
+          { song_id: 3, period_start: shiftDateString(currentWeekStart, 0), play_count: 10 },
+          { song_id: 3, period_start: shiftDateString(currentWeekStart, 1), play_count: 11 },
+          { song_id: 3, period_start: shiftDateString(currentWeekStart, 2), play_count: 12 },
+          { song_id: 3, period_start: shiftDateString(currentWeekStart, 3), play_count: 13 },
+          { song_id: 3, period_start: shiftDateString(currentWeekStart, 4), play_count: 8 },
+          { song_id: 3, period_start: shiftDateString(currentWeekStart, 5), play_count: 9 },
+          { song_id: 3, period_start: shiftDateString(currentWeekStart, 6), play_count: 7 },
         ],
       ]);
 
     const result = await getTop5ChartData({ period: "week", limit: 5 });
 
     expect(result.period).toBe("week");
-    expect(result.effectivePeriodStart).toBe("2026-03-02");
-    expect(result.labels).toEqual([
-      "2026-03-02",
-      "2026-03-03",
-      "2026-03-04",
-      "2026-03-05",
-      "2026-03-06",
-      "2026-03-07",
-      "2026-03-08",
-    ]);
+    expect(result.effectivePeriodStart).toBe(currentWeekStart);
+    expect(result.labels).toEqual(
+      Array.from({ length: 7 }, (_, index) =>
+        shiftDateString(currentWeekStart, index)
+      )
+    );
     expect(result.songs[0].series).toEqual([10, 11, 12, 13, 8, 9, 7]);
   });
 });
@@ -427,6 +419,7 @@ describe("chart.service weekly fallback", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].weekly_play_count).toBe(99);
+    expect(mockDb.query.mock.calls[0][1]).toEqual([expect.any(String)]);
     expect(mockDb.query.mock.calls[1][1]).toEqual(["2024-09-02", 5]);
   });
 
@@ -437,5 +430,6 @@ describe("chart.service weekly fallback", () => {
 
     expect(result).toEqual([]);
     expect(mockDb.query).toHaveBeenCalledTimes(1);
+    expect(mockDb.query.mock.calls[0][1]).toEqual([expect.any(String)]);
   });
 });

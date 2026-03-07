@@ -171,11 +171,20 @@ describe("song.service play stats aggregation", () => {
     expect(mockConnection.query.mock.calls[1][0]).toContain(
       "INSERT INTO song_play_stats (song_id, period_type, period_start, play_count)"
     );
-    expect(mockConnection.query.mock.calls[1][1]).toEqual([10, "day"]);
+    expect(mockConnection.query.mock.calls[1][0]).not.toContain("CURDATE()");
+    expect(mockConnection.query.mock.calls[1][1]).toEqual([
+      10,
+      "day",
+      expect.any(String),
+    ]);
     expect(mockConnection.query.mock.calls[2][0]).toContain(
       "ON DUPLICATE KEY UPDATE play_count = play_count + 1"
     );
-    expect(mockConnection.query.mock.calls[2][1]).toEqual([10, "week"]);
+    expect(mockConnection.query.mock.calls[2][1]).toEqual([
+      10,
+      "week",
+      expect.any(String),
+    ]);
     expect(mockConnection.commit).toHaveBeenCalledTimes(1);
     expect(mockConnection.rollback).not.toHaveBeenCalled();
     expect(mockRecordListeningHistory).toHaveBeenCalledWith(5, 10, 45);

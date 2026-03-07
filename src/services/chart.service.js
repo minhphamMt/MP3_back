@@ -1,6 +1,12 @@
 import db from "../config/db.js";
 import { REGION_GENRES } from "../constants/region-map.js";
 import { buildSongPublicVisibilityCondition } from "../utils/song-visibility.js";
+import {
+  DEFAULT_TIME_ZONE,
+  getCurrentDateInTimeZone,
+  getStartOfWeekDateString,
+  shiftDateString,
+} from "../utils/date-tz.js";
 
 const TOP50_BY_GENRE_CACHE_TTL_MS = 60 * 1000;
 const ZING_CHART_PERIODS = new Set(["day", "week", "total"]);
@@ -97,10 +103,10 @@ export const getZingChart = async ({ limit = 10, period = "day" } = {}) => {
     );
   }
 
-  const periodStartExpression =
+  const periodStart =
     normalizedPeriod === "week"
-      ? "DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)"
-      : "CURDATE()";
+      ? getStartOfWeekDateString(getCurrentDateInTimeZone(DEFAULT_TIME_ZONE))
+      : getCurrentDateInTimeZone(DEFAULT_TIME_ZONE);
 
   const [rows] = await db.query(
     `
@@ -117,13 +123,13 @@ export const getZingChart = async ({ limit = 10, period = "day" } = {}) => {
     JOIN songs s ON s.id = sp.song_id
     LEFT JOIN artists ar ON ar.id = s.artist_id
     WHERE sp.period_type = ?
-      AND sp.period_start = ${periodStartExpression}
+      AND sp.period_start = ?
       AND ${buildSongPublicVisibilityCondition("s")}
       AND (ar.id IS NULL OR ar.is_deleted = 0)
     ORDER BY sp.play_count DESC, s.play_count DESC, s.id DESC
     LIMIT ?
     `,
-    [normalizedPeriod, normalizedLimit]
+    [normalizedPeriod, periodStart, normalizedLimit]
   );
 
   if (rows.length >= normalizedLimit) {
@@ -333,13 +339,16 @@ export const getMultiRegionChart = async (limit = 5) => {
   };
 };
 
-const getLatestAvailableWeekStart = async () => {
-  const [rows] = await db.query(`
+const getLatestAvailableWeekStart = async (currentWeekStart) => {
+  const [rows] = await db.query(
+    `
     SELECT MAX(period_start) AS week_start
     FROM song_play_stats
     WHERE period_type = 'week'
-      AND period_start <= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
-  `);
+      AND period_start <= ?
+  `,
+    [currentWeekStart]
+  );
 
   return rows[0]?.week_start ?? null;
 };
@@ -360,39 +369,33 @@ const formatDateOnly = (value) => {
   return new Date(value).toISOString().slice(0, 10);
 };
 
-const shiftDateString = (dateString, days) => {
-  const date = new Date(`${dateString}T00:00:00.000Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-};
-
 const buildDateLabels = (startDate, count = TOP_CHART_SERIES_DAYS) =>
   Array.from({ length: count }, (_, index) => shiftDateString(startDate, index));
 
-const getCurrentChartAnchors = async () => {
-  const [rows] = await db.query(`
-    SELECT
-      CURDATE() AS current_day,
-      DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AS current_week_start
-  `);
-
+const getCurrentChartAnchors = () => {
+  const currentDay = getCurrentDateInTimeZone(DEFAULT_TIME_ZONE);
   return {
-    currentDay: formatDateOnly(rows[0]?.current_day),
-    currentWeekStart: formatDateOnly(rows[0]?.current_week_start),
+    currentDay,
+    currentWeekStart: getStartOfWeekDateString(currentDay),
   };
 };
 
-const getLatestAvailableDayStart = async (
-  windowDays = TOP_CHART_SERIES_DAYS
-) => {
+const getLatestAvailableDayStart = async ({
+  windowDays = TOP_CHART_SERIES_DAYS,
+  currentDay,
+}) => {
+  const startDate = shiftDateString(
+    currentDay,
+    -(Math.max(1, Number(windowDays) || TOP_CHART_SERIES_DAYS) - 1)
+  );
   const [rows] = await db.query(
     `
     SELECT MAX(period_start) AS day_start
     FROM song_play_stats
     WHERE period_type = 'day'
-      AND period_start BETWEEN DATE_SUB(CURDATE(), INTERVAL ? DAY) AND CURDATE()
+      AND period_start BETWEEN ? AND ?
     `,
-    [Math.max(0, Number(windowDays) - 1)]
+    [startDate, currentDay]
   );
 
   return formatDateOnly(rows[0]?.day_start);
@@ -498,10 +501,12 @@ const mapTopChartSongs = ({ topRows = [], labels = [], statsRows = [], period })
 
 const resolveTopChartContext = async (period) => {
   const normalizedPeriod = normalizeTopChartPeriod(period);
-  const { currentDay, currentWeekStart } = await getCurrentChartAnchors();
+  const { currentDay, currentWeekStart } = getCurrentChartAnchors();
 
   if (normalizedPeriod === "week") {
-    const effectivePeriodStart = formatDateOnly(await getLatestAvailableWeekStart());
+    const effectivePeriodStart = formatDateOnly(
+      await getLatestAvailableWeekStart(currentWeekStart)
+    );
 
     return {
       period: normalizedPeriod,
@@ -519,9 +524,10 @@ const resolveTopChartContext = async (period) => {
     };
   }
 
-  const effectivePeriodStart = await getLatestAvailableDayStart(
-    TOP_CHART_SERIES_DAYS
-  );
+  const effectivePeriodStart = await getLatestAvailableDayStart({
+    windowDays: TOP_CHART_SERIES_DAYS,
+    currentDay,
+  });
 
   return {
     period: normalizedPeriod,
@@ -643,7 +649,10 @@ const getTopSongsFallback = async (limit) => {
 };
 
 export const getTopWeeklySongs = async (limit = 5) => {
-  const weekStart = await getLatestAvailableWeekStart();
+  const currentWeekStart = getStartOfWeekDateString(
+    getCurrentDateInTimeZone(DEFAULT_TIME_ZONE)
+  );
+  const weekStart = await getLatestAvailableWeekStart(currentWeekStart);
 
   if (!weekStart) {
     return getTopSongsFallback(limit);
@@ -680,7 +689,10 @@ export const getTopWeeklySongs = async (limit = 5) => {
 
 
 export const getWeeklyTop5 = async () => {
-  const weekStart = await getLatestAvailableWeekStart();
+  const currentWeekStart = getStartOfWeekDateString(
+    getCurrentDateInTimeZone(DEFAULT_TIME_ZONE)
+  );
+  const weekStart = await getLatestAvailableWeekStart(currentWeekStart);
 
   if (!weekStart) {
     return [];

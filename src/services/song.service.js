@@ -3,6 +3,11 @@ import ROLES from "../constants/roles.js";
 import SONG_STATUS from "../constants/song-status.js";
 import { recordListeningHistory } from "./history.service.js";
 import { buildSongPublicVisibilityCondition } from "../utils/song-visibility.js";
+import {
+  DEFAULT_TIME_ZONE,
+  getCurrentDateInTimeZone,
+  getStartOfWeekDateString,
+} from "../utils/date-tz.js";
 
 const createError = (status, message) => {
   const error = new Error(message);
@@ -522,23 +527,17 @@ const hasRecentListening = async (userId, songId) => {
   return Boolean(rows[0]);
 };
 
-const getWeekStartDate = () => {
-  return `
-    DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
-  `;
-};
-
 const upsertSongPlayStat = async (
   connection,
-  { songId, periodType, periodStartExpression }
+  { songId, periodType, periodStart }
 ) => {
   await connection.query(
     `
     INSERT INTO song_play_stats (song_id, period_type, period_start, play_count)
-    VALUES (?, ?, ${periodStartExpression}, 1)
+    VALUES (?, ?, ?, 1)
     ON DUPLICATE KEY UPDATE play_count = play_count + 1
     `,
-    [songId, periodType]
+    [songId, periodType, periodStart]
   );
 };
 export const recordSongPlay = async (songId, userId, duration = null) => {
@@ -584,6 +583,8 @@ export const recordSongPlay = async (songId, userId, duration = null) => {
   /**
    * 3️⃣ tăng play_count (tổng)
    */
+  const currentDate = getCurrentDateInTimeZone(DEFAULT_TIME_ZONE);
+  const currentWeekStart = getStartOfWeekDateString(currentDate);
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
@@ -605,7 +606,7 @@ export const recordSongPlay = async (songId, userId, duration = null) => {
     await upsertSongPlayStat(connection, {
       songId,
       periodType: "day",
-      periodStartExpression: "CURDATE()",
+      periodStart: currentDate,
     });
 
     /**
@@ -616,7 +617,7 @@ export const recordSongPlay = async (songId, userId, duration = null) => {
     await upsertSongPlayStat(connection, {
       songId,
       periodType: "week",
-      periodStartExpression: getWeekStartDate(),
+      periodStart: currentWeekStart,
     });
 
     await connection.commit();
