@@ -12,7 +12,14 @@ import { buildDailySeries } from "../services/chart.utils.js";
 import { getMultiRegionChart } from "../services/chart.service.js";
 export const zingChart = async (req, res, next) => {
   try {
-    const data = await getZingChart();
+    const limit = Math.min(
+      100,
+      Math.max(1, Number.parseInt(req.query.limit, 10) || 10)
+    );
+    const period =
+      typeof req.query.period === "string" ? req.query.period.trim() : undefined;
+
+    const data = await getZingChart({ limit, period });
     return successResponse(res, data);
   } catch (error) {
     return next(error);

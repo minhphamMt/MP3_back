@@ -3,6 +3,8 @@ import { REGION_GENRES } from "../constants/region-map.js";
 import { buildSongPublicVisibilityCondition } from "../utils/song-visibility.js";
 
 const TOP50_BY_GENRE_CACHE_TTL_MS = 60 * 1000;
+const ZING_CHART_PERIODS = new Set(["day", "week", "total"]);
+const MAX_ZING_CHART_LIMIT = 100;
 let top50ByGenreCache = null;
 
 const getCachedTop50ByGenre = () => {
@@ -22,40 +24,119 @@ const setCachedTop50ByGenre = (data) => {
     expiresAt: Date.now() + TOP50_BY_GENRE_CACHE_TTL_MS,
   };
 };
-/**
- * Zing Chart – Top 10 bài theo lượt nghe trong ngày
- */
-export const getZingChart = async () => {
-  const [rows] = await db.query(`
+
+const normalizeZingChartLimit = (limit = 10) =>
+  Math.min(MAX_ZING_CHART_LIMIT, Math.max(1, Number(limit) || 10));
+
+const normalizeZingChartPeriod = (period = "day") =>
+  ZING_CHART_PERIODS.has(period) ? period : "day";
+
+const mapChartSongRow = (row, index, period) => ({
+  rank: index + 1,
+  song: {
+    id: row.id,
+    title: row.title,
+    cover_url: row.cover_url,
+    duration: row.duration,
+  },
+  artist: row.artist_id
+    ? { id: row.artist_id, name: row.artist_name }
+    : null,
+  playCount: Number(row.total_play_count ?? row.play_count ?? 0),
+  periodPlayCount: Number(row.period_play_count ?? row.play_count ?? 0),
+  period,
+});
+
+const getTopSongsByTotalPlayCount = async (limit, excludeIds = []) => {
+  const normalizedExcludeIds = excludeIds
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id) && id > 0);
+
+  const exclusionClause = normalizedExcludeIds.length
+    ? ` AND s.id NOT IN (${normalizedExcludeIds.map(() => "?").join(",")})`
+    : "";
+
+  const [rows] = await db.query(
+    `
     SELECT
       s.id,
       s.title,
       s.cover_url,
       s.duration,
-      s.play_count,
+      s.play_count AS total_play_count,
       ar.id AS artist_id,
-      ar.name AS artist_name
+      ar.name AS artist_name,
+      0 AS period_play_count
     FROM songs s
     LEFT JOIN artists ar ON ar.id = s.artist_id
     WHERE ${buildSongPublicVisibilityCondition("s")}
-    AND (ar.id IS NULL OR ar.is_deleted = 0)
-    ORDER BY s.play_count DESC
-    LIMIT 10
-  `);
+      AND (ar.id IS NULL OR ar.is_deleted = 0)
+      ${exclusionClause}
+    ORDER BY s.play_count DESC, s.id DESC
+    LIMIT ?
+    `,
+    [...normalizedExcludeIds, limit]
+  );
 
-  return rows.map((row, index) => ({
-    rank: index + 1,
-    song: {
-      id: row.id,
-      title: row.title,
-      cover_url: row.cover_url,
-      duration: row.duration,
-    },
-    artist: row.artist_id
-      ? { id: row.artist_id, name: row.artist_name }
-      : null,
-    playCount: row.play_count,
-  }));
+  return rows;
+};
+/**
+ * Zing Chart – Top 10 bài theo lượt nghe trong ngày
+ */
+export const getZingChart = async ({ limit = 10, period = "day" } = {}) => {
+  const normalizedLimit = normalizeZingChartLimit(limit);
+  const normalizedPeriod = normalizeZingChartPeriod(period);
+
+  if (normalizedPeriod === "total") {
+    const rows = await getTopSongsByTotalPlayCount(normalizedLimit);
+    return rows.map((row, index) =>
+      mapChartSongRow(row, index, normalizedPeriod)
+    );
+  }
+
+  const periodStartExpression =
+    normalizedPeriod === "week"
+      ? "DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)"
+      : "CURDATE()";
+
+  const [rows] = await db.query(
+    `
+    SELECT
+      s.id,
+      s.title,
+      s.cover_url,
+      s.duration,
+      s.play_count AS total_play_count,
+      sp.play_count AS period_play_count,
+      ar.id AS artist_id,
+      ar.name AS artist_name
+    FROM song_play_stats sp
+    JOIN songs s ON s.id = sp.song_id
+    LEFT JOIN artists ar ON ar.id = s.artist_id
+    WHERE sp.period_type = ?
+      AND sp.period_start = ${periodStartExpression}
+      AND ${buildSongPublicVisibilityCondition("s")}
+      AND (ar.id IS NULL OR ar.is_deleted = 0)
+    ORDER BY sp.play_count DESC, s.play_count DESC, s.id DESC
+    LIMIT ?
+    `,
+    [normalizedPeriod, normalizedLimit]
+  );
+
+  if (rows.length >= normalizedLimit) {
+    return rows.map((row, index) =>
+      mapChartSongRow(row, index, normalizedPeriod)
+    );
+  }
+
+  const supplementalRows = await getTopSongsByTotalPlayCount(
+    normalizedLimit - rows.length,
+    rows.map((row) => row.id)
+  );
+
+  return [...rows, ...supplementalRows].map((row, index) =>
+    mapChartSongRow(row, index, normalizedPeriod)
+  );
 };
 
 /**

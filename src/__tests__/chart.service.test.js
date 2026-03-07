@@ -8,7 +8,12 @@ jest.unstable_mockModule("../config/db.js", () => ({
   default: mockDb,
 }));
 
-const { getTopWeeklySongs, getWeeklyTop5, getNewReleaseChart } = await import(
+const {
+  getTopWeeklySongs,
+  getWeeklyTop5,
+  getNewReleaseChart,
+  getZingChart,
+} = await import(
   "../services/chart.service.js"
 );
 
@@ -69,6 +74,120 @@ describe("chart.service new release pagination", () => {
     });
   });
 });
+
+describe("chart.service zing chart realtime ranking", () => {
+  beforeEach(() => {
+    mockDb.query.mockReset();
+  });
+
+  it("uses daily song_play_stats by default so chart updates within the current day", async () => {
+    mockDb.query.mockResolvedValueOnce([
+      [
+        {
+          id: 11,
+          title: "Today Hit",
+          cover_url: "today.jpg",
+          duration: 200,
+          total_play_count: 1000,
+          period_play_count: 48,
+          artist_id: 7,
+          artist_name: "Realtime Artist",
+        },
+      ],
+    ]);
+
+    const result = await getZingChart({ limit: 1 });
+
+    expect(mockDb.query).toHaveBeenCalledWith(
+      expect.stringContaining("FROM song_play_stats sp"),
+      ["day", 1]
+    );
+    expect(result).toEqual([
+      {
+        rank: 1,
+        song: {
+          id: 11,
+          title: "Today Hit",
+          cover_url: "today.jpg",
+          duration: 200,
+        },
+        artist: {
+          id: 7,
+          name: "Realtime Artist",
+        },
+        playCount: 1000,
+        periodPlayCount: 48,
+        period: "day",
+      },
+    ]);
+  });
+
+  it("fills remaining slots from all-time plays when the current period has too few songs", async () => {
+    mockDb.query
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 1,
+            title: "Daily Winner",
+            cover_url: "daily.jpg",
+            duration: 210,
+            total_play_count: 500,
+            period_play_count: 20,
+            artist_id: 4,
+            artist_name: "Daily Artist",
+          },
+        ],
+      ])
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 2,
+            title: "Catalog Hit",
+            cover_url: "catalog.jpg",
+            duration: 180,
+            total_play_count: 9999,
+            period_play_count: 0,
+            artist_id: 5,
+            artist_name: "Legacy Artist",
+          },
+        ],
+      ]);
+
+    const result = await getZingChart({ limit: 2 });
+
+    expect(mockDb.query).toHaveBeenCalledTimes(2);
+    expect(mockDb.query.mock.calls[1][0]).toContain("s.id NOT IN (?)");
+    expect(mockDb.query.mock.calls[1][1]).toEqual([1, 1]);
+    expect(result.map((item) => item.song.id)).toEqual([1, 2]);
+    expect(result[1].periodPlayCount).toBe(0);
+  });
+
+  it("supports total period for clients that still need the legacy all-time ranking", async () => {
+    mockDb.query.mockResolvedValueOnce([
+      [
+        {
+          id: 21,
+          title: "All Time Hit",
+          cover_url: "alltime.jpg",
+          duration: 190,
+          total_play_count: 12345,
+          period_play_count: 0,
+          artist_id: 8,
+          artist_name: "Archive Artist",
+        },
+      ],
+    ]);
+
+    const result = await getZingChart({ period: "total", limit: 1 });
+
+    expect(mockDb.query).toHaveBeenCalledTimes(1);
+    expect(mockDb.query.mock.calls[0][0]).toContain("ORDER BY s.play_count DESC");
+    expect(mockDb.query.mock.calls[0][1]).toEqual([1]);
+    expect(result[0].period).toBe("total");
+    expect(result[0].playCount).toBe(12345);
+  });
+});
+
 describe("chart.service weekly fallback", () => {
   beforeEach(() => {
     mockDb.query.mockReset();
