@@ -12,6 +12,7 @@ router.use(authMiddleware, rbacMiddleware(ROLES.ADMIN));
 router.get("/reports/overview", adminController.getReportOverview);
 router.get("/reports/charts", adminController.getReportCharts);
 router.get("/search", adminController.searchAdmin);
+router.get("/users/:id", adminController.getUserDetailRequest);
 router.get("/genres", adminController.listGenresRequest);
 router.post("/genres", adminController.createGenreRequest);
 router.put("/genres/:id", adminController.updateGenreRequest);

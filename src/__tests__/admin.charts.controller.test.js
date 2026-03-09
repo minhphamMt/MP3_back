@@ -9,6 +9,7 @@ const loadApp = async () => {
     getSystemOverview: jest.fn(),
     getWeeklyTopSongs: jest.fn(),
     getAdminCharts: mockGetAdminCharts,
+    getAdminUserDetail: jest.fn(),
   }));
 
   jest.unstable_mockModule("../config/db.js", () => ({

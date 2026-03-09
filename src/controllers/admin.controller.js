@@ -17,6 +17,7 @@ import {
   getSystemOverview,
   getAdminCharts,
   getWeeklyTopSongs,
+  getAdminUserDetail,
 } from "../services/admin.service.js";
 import { uploadMediaFile } from "../services/storage.service.js";
 import {
@@ -30,6 +31,27 @@ const createHttpError = (status, message) => {
   const err = new Error(message);
   err.status = status;
   return err;
+};
+
+const getScopedPaginationParams = (query = {}, prefix) => {
+  const page = Math.max(
+    parseInt(query[`${prefix}_page`] ?? query[`${prefix}Page`] ?? query.page, 10) || 1,
+    1
+  );
+  const limitInput = parseInt(
+    query[`${prefix}_limit`] ??
+      query[`${prefix}Limit`] ??
+      query.limit ??
+      query.pageSize,
+    10
+  );
+  const limit = Math.min(Math.max(limitInput || 10, 1), 100);
+
+  return {
+    page,
+    limit,
+    offset: (page - 1) * limit,
+  };
 };
 
 export const reviewSongRequest = async (req, res, next) => {
@@ -319,6 +341,19 @@ export const getReportCharts = async (req, res, next) => {
     });
 
     return successResponse(res, charts);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const getUserDetailRequest = async (req, res, next) => {
+  try {
+    const result = await getAdminUserDetail(req.params.id, {
+      listening: getScopedPaginationParams(req.query, "listening"),
+      search: getScopedPaginationParams(req.query, "search"),
+    });
+
+    return successResponse(res, result);
   } catch (error) {
     return next(error);
   }

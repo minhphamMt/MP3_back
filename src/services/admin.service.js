@@ -1,6 +1,8 @@
 import db from "../config/db.js";
 import SONG_STATUS from "../constants/song-status.js";
 import { getTopWeeklySongs } from "./chart.service.js";
+import { getUserListeningHistory } from "./history.service.js";
+import { listSearchHistory } from "./search.service.js";
 
 const CHARTS_CACHE_TTL_MS = 10 * 60 * 1000;
 const chartsCache = new Map();
@@ -15,6 +17,12 @@ const SUPPORTED_INCLUDES = new Set([
 ]);
 
 let indexesEnsured = false;
+
+const createError = (status, message) => {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+};
 
 const getCount = async (query, params = []) => {
   const [rows] = await db.query(query, params);
@@ -210,6 +218,47 @@ export const getSystemOverview = async () => {
 };
 
 export const getWeeklyTopSongs = async (limit = 5) => getTopWeeklySongs(limit);
+
+export const getAdminUserDetail = async (
+  userId,
+  { listening = {}, search = {} } = {}
+) => {
+  const [rows] = await db.query(
+    `
+    SELECT
+      u.id,
+      u.display_name,
+      u.email,
+      u.role,
+      u.is_active,
+      u.avatar_url,
+      u.firebase_uid,
+      u.auth_provider,
+      u.artist_register_intent,
+      u.created_at,
+      u.updated_at
+    FROM users u
+    WHERE u.id = ?
+    `,
+    [userId]
+  );
+
+  const user = rows[0];
+  if (!user) {
+    throw createError(404, "User not found");
+  }
+
+  const [listeningHistory, searchHistory] = await Promise.all([
+    getUserListeningHistory(userId, listening),
+    listSearchHistory(userId, search),
+  ]);
+
+  return {
+    profile: user,
+    listening_history: listeningHistory,
+    search_history: searchHistory,
+  };
+};
 
 export const getAdminCharts = async ({ from, to, tz, bucket, include, weeklyLimit = 10 } = {}) => {
   await ensureAdminReportIndexes();
