@@ -68,14 +68,10 @@ describe("admin.service user detail", () => {
         display_name: "Test User",
         email: "test@example.com",
       }),
-      listening_history: {
-        items: [{ id: 1 }],
-        meta: { page: 2, limit: 5, total: 11, totalPages: 3 },
-      },
-      search_history: {
-        items: [{ id: 7, keyword: "lofi" }],
-        meta: { page: 1, limit: 3, total: 4, totalPages: 2 },
-      },
+      listening_history: [{ id: 1 }],
+      listening_history_meta: { page: 2, limit: 5, total: 11, totalPages: 3 },
+      search_history: [{ id: 7, keyword: "lofi" }],
+      search_history_meta: { page: 1, limit: 3, total: 4, totalPages: 2 },
     });
     expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining("FROM users u"), ["15"]);
     expect(mockGetUserListeningHistory).toHaveBeenCalledWith("15", {

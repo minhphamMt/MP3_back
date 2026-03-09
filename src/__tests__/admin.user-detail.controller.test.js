@@ -51,14 +51,10 @@ describe("GET /api/admin/users/:id", () => {
   it("allows admin and returns user detail payload", async () => {
     mockGetAdminUserDetail.mockResolvedValue({
       profile: { id: 9, display_name: "Listener" },
-      listening_history: {
-        items: [{ id: 1 }],
-        meta: { page: 2, limit: 5, total: 8, totalPages: 2 },
-      },
-      search_history: {
-        items: [{ id: 3, keyword: "ballad" }],
-        meta: { page: 1, limit: 3, total: 3, totalPages: 1 },
-      },
+      listening_history: [{ id: 1 }],
+      listening_history_meta: { page: 2, limit: 5, total: 8, totalPages: 2 },
+      search_history: [{ id: 3, keyword: "ballad" }],
+      search_history_meta: { page: 1, limit: 3, total: 3, totalPages: 1 },
     });
 
     const app = await loadApp();

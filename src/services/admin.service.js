@@ -255,8 +255,10 @@ export const getAdminUserDetail = async (
 
   return {
     profile: user,
-    listening_history: listeningHistory,
-    search_history: searchHistory,
+    listening_history: listeningHistory.items,
+    listening_history_meta: listeningHistory.meta,
+    search_history: searchHistory.items,
+    search_history_meta: searchHistory.meta,
   };
 };
 
