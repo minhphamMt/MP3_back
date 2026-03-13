@@ -215,6 +215,93 @@ describe("search.service", () => {
     ]);
   });
 
+  it("reuses cached search results for repeated suggestions", async () => {
+    mockDb.query
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 21,
+            title: "Tetvovo",
+            artist_id: 31,
+            album_id: null,
+            duration: 200,
+            audio_path: "/music/tetvovo.mp3",
+            cover_url: "/covers/tetvovo.jpg",
+            status: "approved",
+            play_count: 500,
+            release_date: "2025-01-01",
+            created_at: "2025-01-01T00:00:00.000Z",
+            artist_name: "Wxrdie",
+            artist_alias: "wrx",
+            artist_realname: "Nguyen Vu",
+            artist_names: "Wxrdie",
+            artist_aliases: "wrx",
+            artist_realnames: "Nguyen Vu",
+            album_title: "",
+            like_count: 50,
+            genre_names: "rap hip hop",
+          },
+        ],
+      ])
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 31,
+            user_id: 2,
+            name: "Wxrdie",
+            alias: "wrx",
+            bio: "Rapper",
+            short_bio: "Rapper",
+            avatar_url: "/artists/wxrdie.jpg",
+            cover_url: "/artists/wxrdie-cover.jpg",
+            birthday: "2000-01-01",
+            realname: "Nguyen Vu",
+            national: "VN",
+            follow_count: 1200,
+            zing_artist_id: "zing-31",
+            is_deleted: 0,
+            deleted_at: null,
+            deleted_by: null,
+            deleted_by_role: null,
+            created_at: "2025-01-01T00:00:00.000Z",
+            updated_at: null,
+            song_count: 10,
+            song_titles: "Tetvovo || Lau Dai Tinh Ai",
+            album_titles: "Wxrdie Collection",
+            genre_names: "rap hip hop",
+          },
+        ],
+      ])
+      .mockResolvedValueOnce([[]])
+      .mockResolvedValueOnce([
+        [
+          {
+            song_id: 21,
+            artist_id: 31,
+            artist_role: "primary",
+            sort_order: 1,
+            artist_name: "Wxrdie",
+          },
+        ],
+      ]);
+
+    const { searchEntities } = await loadService();
+
+    const firstResult = await searchEntities("wxrdie", {
+      page: 1,
+      limit: 10,
+      offset: 0,
+    });
+    const secondResult = await searchEntities("wxrdie", {
+      page: 1,
+      limit: 10,
+      offset: 0,
+    });
+
+    expect(secondResult).toEqual(firstResult);
+    expect(mockDb.query).toHaveBeenCalledTimes(4);
+  });
+
   it("matches artist realname and surfaces related songs and albums tightly", async () => {
     mockDb.query
       .mockResolvedValueOnce([

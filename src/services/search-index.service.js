@@ -8,28 +8,35 @@ import {
 
 const SEARCH_INDEX_TTL_MS = Number(process.env.SEARCH_INDEX_TTL_MS) > 0
   ? Number(process.env.SEARCH_INDEX_TTL_MS)
-  : 30 * 1000;
+  : 10 * 60 * 1000;
+const SEARCH_INDEX_STALE_MS = Number(process.env.SEARCH_INDEX_STALE_MS) > 0
+  ? Number(process.env.SEARCH_INDEX_STALE_MS)
+  : 30 * 60 * 1000;
 const USER_SIGNAL_TTL_MS = Number(process.env.SEARCH_USER_SIGNAL_TTL_MS) > 0
   ? Number(process.env.SEARCH_USER_SIGNAL_TTL_MS)
-  : 30 * 1000;
-const SEARCH_CANDIDATE_MULTIPLIER = 10;
-const MIN_SEARCH_CANDIDATES = 40;
+  : 5 * 60 * 1000;
+const SEARCH_RESULT_TTL_MS = Number(process.env.SEARCH_RESULT_TTL_MS) > 0
+  ? Number(process.env.SEARCH_RESULT_TTL_MS)
+  : 15 * 1000;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 const searchIndexCache = {
   public: {
     data: null,
     expiresAt: 0,
+    staleAt: 0,
     promise: null,
   },
   admin: {
     data: null,
     expiresAt: 0,
+    staleAt: 0,
     promise: null,
   },
 };
 
 const userSignalCache = new Map();
+const searchResultCache = new Map();
 
 const normalizeKeyword = (keyword = "") =>
   String(keyword ?? "")
@@ -55,6 +62,18 @@ const tokenizeKeyword = (keyword = "") =>
   [...new Set(normalizeForSearch(keyword).split(" ").filter(Boolean))];
 
 const uniqueStrings = (values = []) => [...new Set(values.filter(Boolean))];
+
+const createFieldIndex = (values = []) => {
+  const raw = uniqueStrings(values);
+  const normalized = raw.map((value) => normalizeForSearch(value)).filter(Boolean);
+  const compact = normalized.map((value) => value.replace(/\s+/g, ""));
+
+  return {
+    raw,
+    normalized,
+    compact,
+  };
+};
 
 const buildSearchText = (...values) => {
   const variants = values.flatMap((value) => {
@@ -200,10 +219,10 @@ const getRequiredTokenCoverage = (tokens = []) => {
   return 0.66;
 };
 
-const mergeFuseResults = (fuse, keyword, candidateLimit) => {
+const mergeFuseResults = (fuse, queryTerms, candidateLimit) => {
   const merged = new Map();
 
-  for (const term of getFuseQueryTerms(keyword)) {
+  for (const term of queryTerms) {
     if (!term) continue;
 
     const searchResults = fuse.search(term).slice(0, candidateLimit);
@@ -220,9 +239,9 @@ const mergeFuseResults = (fuse, keyword, candidateLimit) => {
   );
 };
 
-const buildFieldSignals = (values = [], normalizedKeyword, compactKeyword, tokens) => {
-  const normalizedValues = values.map((value) => normalizeForSearch(value)).filter(Boolean);
-  const compactValues = normalizedValues.map((value) => value.replace(/\s+/g, ""));
+const buildFieldSignals = (fieldIndex, normalizedKeyword, compactKeyword, tokens) => {
+  const normalizedValues = fieldIndex?.normalized || [];
+  const compactValues = fieldIndex?.compact || [];
 
   const exact = normalizedValues.some(
     (value, index) => value === normalizedKeyword || compactValues[index] === compactKeyword
@@ -248,11 +267,10 @@ const buildFieldSignals = (values = [], normalizedKeyword, compactKeyword, token
   };
 };
 
-const getBestFieldDistance = (values = [], compactKeyword, limit = 2) => {
+const getBestFieldDistance = (fieldIndex, compactKeyword, limit = 2) => {
   if (!compactKeyword) return Number.POSITIVE_INFINITY;
 
-  return values
-    .map((value) => compactSearchValue(value))
+  return (fieldIndex?.compact || [])
     .filter(
       (value) =>
         value &&
@@ -296,40 +314,75 @@ const getPersonalizationBonus = (document, userSignals) => {
   return bonus;
 };
 
-const rankSearchResult = (result, keyword, userSignals) => {
-  const document = result.item;
+const createSearchContext = (keyword) => {
   const normalizedKeyword = normalizeForSearch(keyword);
-  const compactKeyword = compactSearchValue(keyword);
-  const tokens = tokenizeKeyword(keyword);
+  const compactKeyword = normalizedKeyword.replace(/\s+/g, "");
+  const tokens = normalizedKeyword.split(" ").filter(Boolean);
+
+  return {
+    keyword,
+    normalizedKeyword,
+    compactKeyword,
+    tokens,
+    compactLength: compactKeyword.length,
+    queryTerms: getFuseQueryTerms(keyword),
+    maxAcceptedFuseScore: getMaxAcceptedFuseScore(keyword),
+    requiredTokenCoverage: getRequiredTokenCoverage(tokens),
+  };
+};
+
+const getCandidateLimit = ({ compactLength }, limit, offset) => {
+  const pageWindow = Math.max(offset + limit, limit, 1);
+
+  if (compactLength <= 2) {
+    return Math.max(16, pageWindow * 3);
+  }
+
+  if (compactLength <= 4) {
+    return Math.max(24, pageWindow * 5);
+  }
+
+  if (compactLength <= 8) {
+    return Math.max(36, pageWindow * 7);
+  }
+
+  return Math.max(48, pageWindow * 8);
+};
+
+const rankSearchResult = (result, searchContext, userSignals) => {
+  const document = result.item;
+  const { normalizedKeyword, compactKeyword, tokens } = searchContext;
   const fuseScore = result.score ?? 1;
 
-  const primaryDistance = document.primary_norm
-    ? damerauLevenshteinDistance(document.primary_compact, compactKeyword, 2)
-    : Number.POSITIVE_INFINITY;
+  const primaryDistance = getBestFieldDistance(
+    document.primary_index,
+    compactKeyword,
+    2
+  );
   const primarySignals = buildFieldSignals(
-    [document.primary_text],
+    document.primary_index,
     normalizedKeyword,
     compactKeyword,
     tokens
   );
   const prioritySignals = buildFieldSignals(
-    document.priority_fields || [],
+    document.priority_index,
     normalizedKeyword,
     compactKeyword,
     tokens
   );
   const secondarySignals = buildFieldSignals(
-    document.match_fields,
+    document.match_index,
     normalizedKeyword,
     compactKeyword,
     tokens
   );
   const priorityDistance = getBestFieldDistance(
-    document.priority_fields || [],
+    document.priority_index,
     compactKeyword,
     2
   );
-  const secondaryDistance = getBestFieldDistance(document.match_fields, compactKeyword, 2);
+  const secondaryDistance = getBestFieldDistance(document.match_index, compactKeyword, 2);
 
   const tokenHits = Math.max(
     primarySignals.tokenHits,
@@ -364,8 +417,8 @@ const rankSearchResult = (result, keyword, userSignals) => {
     softPrimaryTypo ||
     softPriorityTypo ||
     softSecondaryTypo ||
-    (fuseScore <= getMaxAcceptedFuseScore(keyword) &&
-      tokenCoverage >= getRequiredTokenCoverage(tokens));
+    (fuseScore <= searchContext.maxAcceptedFuseScore &&
+      tokenCoverage >= searchContext.requiredTokenCoverage);
 
   if (!keep) {
     return null;
@@ -429,6 +482,16 @@ const buildSongDocuments = (rows, artistMap) =>
   rows.map((row) => {
     const artistNames = row.artist_names || row.artist_name || "";
     const artists = artistMap.get(row.id) || [];
+    const primaryIndex = createFieldIndex([row.title]);
+    const priorityIndex = createFieldIndex([
+      row.artist_names,
+      row.artist_name,
+      row.artist_aliases,
+      row.artist_alias,
+      row.artist_realnames,
+      row.artist_realname,
+    ]);
+    const matchIndex = createFieldIndex([row.album_title, row.genre_names]);
 
     return {
       ref: `song:${row.id}`,
@@ -437,17 +500,13 @@ const buildSongDocuments = (rows, artistMap) =>
       artist_id: row.artist_id,
       album_id: row.album_id,
       primary_text: row.title || "",
-      primary_norm: normalizeForSearch(row.title),
-      primary_compact: compactSearchValue(row.title),
-      priority_fields: uniqueStrings([
-        row.artist_names,
-        row.artist_name,
-        row.artist_aliases,
-        row.artist_alias,
-        row.artist_realnames,
-        row.artist_realname,
-      ]),
-      match_fields: uniqueStrings([row.album_title, row.genre_names]),
+      primary_norm: primaryIndex.normalized[0] || "",
+      primary_compact: primaryIndex.compact[0] || "",
+      primary_index: primaryIndex,
+      priority_fields: priorityIndex.raw,
+      priority_index: priorityIndex,
+      match_fields: matchIndex.raw,
+      match_index: matchIndex,
       priority_exact_boost: 58,
       priority_prefix_boost: 34,
       priority_contains_boost: 14,
@@ -475,85 +534,117 @@ const buildSongDocuments = (rows, artistMap) =>
   });
 
 const buildArtistDocuments = (rows) =>
-  rows.map((row) => ({
-    ref: `artist:${row.id}`,
-    type: "artist",
-    id: row.id,
-    artist_id: row.id,
-    album_id: null,
-    primary_text: row.name || "",
-    primary_norm: normalizeForSearch(row.name),
-    primary_compact: compactSearchValue(row.name),
-    priority_fields: uniqueStrings([row.alias, row.realname]),
-    match_fields: uniqueStrings([row.song_titles, row.album_titles, row.genre_names, row.national]),
-    priority_exact_boost: 96,
-    priority_prefix_boost: 44,
-    priority_contains_boost: 18,
-    priority_typo_boost: 34,
-    popularity_score: buildArtistPopularityScore(row),
-    freshness_score: 0,
-    search_name: buildSearchText(row.name),
-    search_alias: buildSearchText(row.alias),
-    search_realname: buildSearchText(row.realname),
-    search_song_titles: buildSearchText(row.song_titles),
-    search_album_titles: buildSearchText(row.album_titles),
-    search_genres: buildSearchText(row.genre_names, row.national),
-    payload: row,
-  }));
+  rows.map((row) => {
+    const primaryIndex = createFieldIndex([row.name]);
+    const priorityIndex = createFieldIndex([row.alias, row.realname]);
+    const matchIndex = createFieldIndex([
+      row.song_titles,
+      row.album_titles,
+      row.genre_names,
+      row.national,
+    ]);
+
+    return {
+      ref: `artist:${row.id}`,
+      type: "artist",
+      id: row.id,
+      artist_id: row.id,
+      album_id: null,
+      primary_text: row.name || "",
+      primary_norm: primaryIndex.normalized[0] || "",
+      primary_compact: primaryIndex.compact[0] || "",
+      primary_index: primaryIndex,
+      priority_fields: priorityIndex.raw,
+      priority_index: priorityIndex,
+      match_fields: matchIndex.raw,
+      match_index: matchIndex,
+      priority_exact_boost: 96,
+      priority_prefix_boost: 44,
+      priority_contains_boost: 18,
+      priority_typo_boost: 34,
+      popularity_score: buildArtistPopularityScore(row),
+      freshness_score: 0,
+      search_name: buildSearchText(row.name),
+      search_alias: buildSearchText(row.alias),
+      search_realname: buildSearchText(row.realname),
+      search_song_titles: buildSearchText(row.song_titles),
+      search_album_titles: buildSearchText(row.album_titles),
+      search_genres: buildSearchText(row.genre_names, row.national),
+      payload: row,
+    };
+  });
 
 const buildAlbumDocuments = (rows) =>
-  rows.map((row) => ({
-    ref: `album:${row.id}`,
-    type: "album",
-    id: row.id,
-    artist_id: row.artist_id,
-    album_id: row.id,
-    primary_text: row.title || "",
-    primary_norm: normalizeForSearch(row.title),
-    primary_compact: compactSearchValue(row.title),
-    priority_fields: uniqueStrings([
+  rows.map((row) => {
+    const primaryIndex = createFieldIndex([row.title]);
+    const priorityIndex = createFieldIndex([
       row.artist_name,
       row.artist_alias,
       row.artist_realname,
-    ]),
-    match_fields: uniqueStrings([row.song_titles, row.genre_names]),
-    priority_exact_boost: 54,
-    priority_prefix_boost: 30,
-    priority_contains_boost: 12,
-    priority_typo_boost: 22,
-    popularity_score: buildAlbumPopularityScore(row),
-    freshness_score: getFreshnessScore(row.release_date),
-    search_title: buildSearchText(row.title),
-    search_artist_name: buildSearchText(
-      row.artist_name,
-      row.artist_alias,
-      row.artist_realname
-    ),
-    search_song_titles: buildSearchText(row.song_titles),
-    search_genres: buildSearchText(row.genre_names),
-    payload: {
-      ...row,
-      artist_name: row.artist_name || "",
-    },
-  }));
+    ]);
+    const matchIndex = createFieldIndex([row.song_titles, row.genre_names]);
+
+    return {
+      ref: `album:${row.id}`,
+      type: "album",
+      id: row.id,
+      artist_id: row.artist_id,
+      album_id: row.id,
+      primary_text: row.title || "",
+      primary_norm: primaryIndex.normalized[0] || "",
+      primary_compact: primaryIndex.compact[0] || "",
+      primary_index: primaryIndex,
+      priority_fields: priorityIndex.raw,
+      priority_index: priorityIndex,
+      match_fields: matchIndex.raw,
+      match_index: matchIndex,
+      priority_exact_boost: 54,
+      priority_prefix_boost: 30,
+      priority_contains_boost: 12,
+      priority_typo_boost: 22,
+      popularity_score: buildAlbumPopularityScore(row),
+      freshness_score: getFreshnessScore(row.release_date),
+      search_title: buildSearchText(row.title),
+      search_artist_name: buildSearchText(
+        row.artist_name,
+        row.artist_alias,
+        row.artist_realname
+      ),
+      search_song_titles: buildSearchText(row.song_titles),
+      search_genres: buildSearchText(row.genre_names),
+      payload: {
+        ...row,
+        artist_name: row.artist_name || "",
+      },
+    };
+  });
 
 const buildUserDocuments = (rows) =>
-  rows.map((row) => ({
-    ref: `user:${row.id}`,
-    type: "user",
-    id: row.id,
-    artist_id: null,
-    album_id: null,
-    primary_text: row.display_name || row.email || "",
-    primary_norm: normalizeForSearch(row.display_name || row.email || ""),
-    primary_compact: compactSearchValue(row.display_name || row.email || ""),
-    match_fields: uniqueStrings([row.email]),
-    popularity_score: row.is_active ? 0.5 : 0,
-    freshness_score: 0,
-    search_display_name: buildSearchText(row.display_name),
-    search_email: buildSearchText(row.email),
-    payload: row,
-  }));
+  rows.map((row) => {
+    const primaryIndex = createFieldIndex([row.display_name || row.email]);
+    const matchIndex = createFieldIndex([row.email]);
+
+    return {
+      ref: `user:${row.id}`,
+      type: "user",
+      id: row.id,
+      artist_id: null,
+      album_id: null,
+      primary_text: row.display_name || row.email || "",
+      primary_norm: primaryIndex.normalized[0] || "",
+      primary_compact: primaryIndex.compact[0] || "",
+      primary_index: primaryIndex,
+      priority_fields: [],
+      priority_index: createFieldIndex([]),
+      match_fields: matchIndex.raw,
+      match_index: matchIndex,
+      popularity_score: row.is_active ? 0.5 : 0,
+      freshness_score: 0,
+      search_display_name: buildSearchText(row.display_name),
+      search_email: buildSearchText(row.email),
+      payload: row,
+    };
+  });
 
 const createSearchIndex = (documents) => ({
   documents,
@@ -584,6 +675,32 @@ const createSearchIndex = (documents) => ({
     ]),
   },
 });
+
+const getCachedSearchResult = (cacheKey) => {
+  const cached = searchResultCache.get(cacheKey);
+  if (!cached) return null;
+
+  if (cached.expiresAt > Date.now()) {
+    return cached.data;
+  }
+
+  searchResultCache.delete(cacheKey);
+  return null;
+};
+
+const setCachedSearchResult = (cacheKey, data) => {
+  if (searchResultCache.size >= 200) {
+    const oldestKey = searchResultCache.keys().next().value;
+    if (oldestKey) {
+      searchResultCache.delete(oldestKey);
+    }
+  }
+
+  searchResultCache.set(cacheKey, {
+    data,
+    expiresAt: Date.now() + SEARCH_RESULT_TTL_MS,
+  });
+};
 
 const loadSongArtists = async (includeDeleted) => {
   const [rows] = await db.query(
@@ -1111,14 +1228,10 @@ const loadUserSearchSignals = async (userId) => {
   return data;
 };
 
-const getSearchIndex = async (scope) => {
+const refreshSearchIndex = (scope) => {
   const cacheEntry = searchIndexCache[scope];
   if (!cacheEntry) {
     throw new Error(`Unsupported search scope: ${scope}`);
-  }
-
-  if (cacheEntry.data && cacheEntry.expiresAt > Date.now()) {
-    return cacheEntry.data;
   }
 
   if (cacheEntry.promise) {
@@ -1129,6 +1242,7 @@ const getSearchIndex = async (scope) => {
     .then((data) => {
       cacheEntry.data = data;
       cacheEntry.expiresAt = Date.now() + SEARCH_INDEX_TTL_MS;
+      cacheEntry.staleAt = Date.now() + SEARCH_INDEX_STALE_MS;
       return data;
     })
     .finally(() => {
@@ -1138,8 +1252,28 @@ const getSearchIndex = async (scope) => {
   return cacheEntry.promise;
 };
 
+const getSearchIndex = async (scope) => {
+  const cacheEntry = searchIndexCache[scope];
+  if (!cacheEntry) {
+    throw new Error(`Unsupported search scope: ${scope}`);
+  }
+
+  const now = Date.now();
+
+  if (cacheEntry.data && cacheEntry.expiresAt > now) {
+    return cacheEntry.data;
+  }
+
+  if (cacheEntry.data && cacheEntry.staleAt > now) {
+    void refreshSearchIndex(scope);
+    return cacheEntry.data;
+  }
+
+  return refreshSearchIndex(scope);
+};
+
 const searchTypedDocuments = async (
-  keyword,
+  searchContext,
   { documents, fuse, limit, offset, userSignals }
 ) => {
   if (!documents.length) {
@@ -1149,21 +1283,21 @@ const searchTypedDocuments = async (
     };
   }
 
-  const normalizedKeyword = normalizeForSearch(keyword);
-  if (!normalizedKeyword) {
+  if (!searchContext.normalizedKeyword) {
     return {
       items: [],
       total: 0,
     };
   }
 
-  const candidateLimit = Math.max(
-    MIN_SEARCH_CANDIDATES,
-    (offset + limit) * SEARCH_CANDIDATE_MULTIPLIER
-  );
+  const candidateLimit = getCandidateLimit(searchContext, limit, offset);
 
-  const rankedResults = mergeFuseResults(fuse, keyword, candidateLimit)
-    .map((result) => rankSearchResult(result, keyword, userSignals))
+  const rankedResults = mergeFuseResults(
+    fuse,
+    searchContext.queryTerms,
+    candidateLimit
+  )
+    .map((result) => rankSearchResult(result, searchContext, userSignals))
     .filter(Boolean)
     .sort(
       (left, right) =>
@@ -1183,26 +1317,53 @@ export const searchIndexedEntities = async (
   keyword,
   { limit, offset, scope = "public", userId } = {}
 ) => {
+  const searchContext = createSearchContext(keyword);
+  if (!searchContext.normalizedKeyword) {
+    return {
+      items: {
+        songs: [],
+        artists: [],
+        albums: [],
+        ...(scope === "admin" ? { users: [] } : {}),
+      },
+      total: 0,
+    };
+  }
+
+  const cacheKey = [
+    scope,
+    userId || 0,
+    limit,
+    offset,
+    searchContext.normalizedKeyword,
+  ].join(":");
+  const cachedResult = getCachedSearchResult(cacheKey);
+  if (cachedResult) {
+    return cachedResult;
+  }
+
   const searchIndex = await getSearchIndex(scope);
   const userSignals =
-    scope === "public" && userId ? await loadUserSearchSignals(userId) : null;
+    scope === "public" && userId && searchContext.compactLength >= 3
+      ? await loadUserSearchSignals(userId)
+      : null;
 
   const [songs, artists, albums, users] = await Promise.all([
-    searchTypedDocuments(keyword, {
+    searchTypedDocuments(searchContext, {
       documents: searchIndex.documents.songs,
       fuse: searchIndex.fuses.songs,
       limit,
       offset,
       userSignals,
     }),
-    searchTypedDocuments(keyword, {
+    searchTypedDocuments(searchContext, {
       documents: searchIndex.documents.artists,
       fuse: searchIndex.fuses.artists,
       limit,
       offset,
       userSignals,
     }),
-    searchTypedDocuments(keyword, {
+    searchTypedDocuments(searchContext, {
       documents: searchIndex.documents.albums,
       fuse: searchIndex.fuses.albums,
       limit,
@@ -1210,7 +1371,7 @@ export const searchIndexedEntities = async (
       userSignals,
     }),
     scope === "admin"
-      ? searchTypedDocuments(keyword, {
+      ? searchTypedDocuments(searchContext, {
           documents: searchIndex.documents.users,
           fuse: searchIndex.fuses.users,
           limit,
@@ -1220,7 +1381,7 @@ export const searchIndexedEntities = async (
       : Promise.resolve({ items: [], total: 0 }),
   ]);
 
-  return {
+  const result = {
     items: {
       songs: songs.items,
       artists: artists.items,
@@ -1229,6 +1390,10 @@ export const searchIndexedEntities = async (
     },
     total: songs.total + artists.total + albums.total + users.total,
   };
+
+  setCachedSearchResult(cacheKey, result);
+
+  return result;
 };
 
 export const invalidateSearchIndexCache = (scope = null) => {
@@ -1239,7 +1404,10 @@ export const invalidateSearchIndexCache = (scope = null) => {
     searchIndexCache[key] = {
       data: null,
       expiresAt: 0,
+      staleAt: 0,
       promise: null,
     };
   }
+
+  searchResultCache.clear();
 };
