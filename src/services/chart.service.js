@@ -1,5 +1,9 @@
 import db from "../config/db.js";
-import { REGION_GENRES } from "../constants/region-map.js";
+import {
+  REGION_ALLOWED_ARTIST_NATIONALITIES,
+  REGION_BLOCKED_ARTIST_NATIONALITIES,
+  REGION_GENRES,
+} from "../constants/region-map.js";
 import { buildSongPublicVisibilityCondition } from "../utils/song-visibility.js";
 import {
   DEFAULT_TIME_ZONE,
@@ -260,6 +264,38 @@ export const getSongDailySeries = async (songId, days = 7) => {
   return rows;
 };
 
+const buildRegionArtistNationalityFilter = (regionKey) => {
+  const allowedNationalities =
+    REGION_ALLOWED_ARTIST_NATIONALITIES[regionKey] || [];
+  const blockedNationalities =
+    REGION_BLOCKED_ARTIST_NATIONALITIES[regionKey] || [];
+  const clauses = [];
+  const params = [];
+
+  if (allowedNationalities.length) {
+    clauses.push(
+      `(ar.id IS NULL OR ar.national IS NULL OR TRIM(ar.national) = '' OR ar.national IN (${allowedNationalities
+        .map(() => "?")
+        .join(",")}))`
+    );
+    params.push(...allowedNationalities);
+  }
+
+  if (blockedNationalities.length) {
+    clauses.push(
+      `(ar.id IS NULL OR ar.national IS NULL OR TRIM(ar.national) = '' OR ar.national NOT IN (${blockedNationalities
+        .map(() => "?")
+        .join(",")}))`
+    );
+    params.push(...blockedNationalities);
+  }
+
+  return {
+    clause: clauses.length ? ` AND ${clauses.join(" AND ")}` : "",
+    params,
+  };
+};
+
 const getRegionChart = async (regionKey, limit = 5) => {
   const genres = REGION_GENRES[regionKey];
   if (!genres) {
@@ -267,35 +303,38 @@ const getRegionChart = async (regionKey, limit = 5) => {
   }
 
   const placeholders = genres.map(() => "?").join(",");
+  const nationalityFilter = buildRegionArtistNationalityFilter(regionKey);
 
   const [rows] = await db.query(
     `
     SELECT
       s.id,
-      ANY_VALUE(s.title) AS title,
-      ANY_VALUE(s.duration) AS duration,
-      ANY_VALUE(s.play_count) AS play_count,
-      ANY_VALUE(s.cover_url) AS cover_url,
-
-      ANY_VALUE(ar.id) AS artist_id,
-      ANY_VALUE(ar.name) AS artist_name,
-
-      ANY_VALUE(s.album_id) AS album_id,
-      ANY_VALUE(al.title) AS album_title,
-      ANY_VALUE(al.cover_url) AS album_cover_url
+      s.title,
+      s.duration,
+      s.play_count,
+      s.cover_url,
+      ar.id AS artist_id,
+      ar.name AS artist_name,
+      s.album_id AS album_id,
+      al.title AS album_title,
+      al.cover_url AS album_cover_url
     FROM songs s
-    JOIN song_genres sg ON sg.song_id = s.id
-    JOIN genres g ON g.id = sg.genre_id
     LEFT JOIN artists ar ON ar.id = s.artist_id
     LEFT JOIN albums al ON al.id = s.album_id
-    WHERE g.name IN (${placeholders})
-      AND ${buildSongPublicVisibilityCondition("s", { albumAlias: "al" })}
+    WHERE ${buildSongPublicVisibilityCondition("s", { albumAlias: "al" })}
       AND (ar.id IS NULL OR ar.is_deleted = 0)
-    GROUP BY s.id
-    ORDER BY s.play_count DESC
+      ${nationalityFilter.clause}
+      AND EXISTS (
+        SELECT 1
+        FROM song_genres sg
+        JOIN genres g ON g.id = sg.genre_id
+        WHERE sg.song_id = s.id
+          AND g.name IN (${placeholders})
+      )
+    ORDER BY s.play_count DESC, s.id DESC
     LIMIT ?;
     `,
-    [...genres, Number(limit)]
+    [...nationalityFilter.params, ...genres, Number(limit)]
   );
 
   return rows.map((row, index) => ({

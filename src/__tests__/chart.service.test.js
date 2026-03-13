@@ -14,11 +14,17 @@ jest.unstable_mockModule("../config/db.js", () => ({
 }));
 
 const {
+  REGION_ALLOWED_ARTIST_NATIONALITIES,
+  REGION_BLOCKED_ARTIST_NATIONALITIES,
+  REGION_GENRES,
+} = await import("../constants/region-map.js");
+const {
   getTopWeeklySongs,
   getWeeklyTop5,
   getNewReleaseChart,
   getZingChart,
   getTop5ChartData,
+  getMultiRegionChart,
 } = await import(
   "../services/chart.service.js"
 );
@@ -328,6 +334,116 @@ describe("chart.service top5 chart data", () => {
       )
     );
     expect(result.songs[0].series).toEqual([10, 11, 12, 13, 8, 9, 7]);
+  });
+});
+
+describe("chart.service multi-region chart", () => {
+  beforeEach(() => {
+    mockDb.query.mockReset();
+  });
+
+  it("uses only explicit region genres so generic style genres do not leak into USUK or K-pop charts", async () => {
+    mockDb.query
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 1,
+            title: "Vietnam Song",
+            duration: 200,
+            play_count: 100,
+            cover_url: "vn.jpg",
+            artist_id: 10,
+            artist_name: "Vietnam Artist",
+            album_id: 100,
+            album_title: "Vietnam Album",
+            album_cover_url: "vn-album.jpg",
+          },
+        ],
+      ])
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 2,
+            title: "USUK Song",
+            duration: 180,
+            play_count: 90,
+            cover_url: "usuk.jpg",
+            artist_id: 20,
+            artist_name: "USUK Artist",
+            album_id: null,
+            album_title: null,
+            album_cover_url: null,
+          },
+        ],
+      ])
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 3,
+            title: "K-pop Song",
+            duration: 175,
+            play_count: 80,
+            cover_url: "kpop.jpg",
+            artist_id: 30,
+            artist_name: "K-pop Artist",
+            album_id: null,
+            album_title: null,
+            album_cover_url: null,
+          },
+        ],
+      ]);
+
+    const result = await getMultiRegionChart(3);
+
+    expect(mockDb.query).toHaveBeenCalledTimes(3);
+    expect(mockDb.query.mock.calls[0][0]).toContain("AND EXISTS");
+    expect(mockDb.query.mock.calls[0][0]).toContain("ar.national IN");
+    expect(mockDb.query.mock.calls[1][0]).toContain("ar.national NOT IN");
+    expect(mockDb.query.mock.calls[2][0]).toContain("ar.national IN");
+    expect(mockDb.query.mock.calls[0][1]).toEqual([
+      ...REGION_ALLOWED_ARTIST_NATIONALITIES.VIETNAM,
+      ...REGION_GENRES.VIETNAM,
+      3,
+    ]);
+    expect(mockDb.query.mock.calls[1][1]).toEqual([
+      ...REGION_BLOCKED_ARTIST_NATIONALITIES.USUK,
+      ...REGION_GENRES.USUK,
+      3,
+    ]);
+    expect(mockDb.query.mock.calls[2][1]).toEqual([
+      ...REGION_ALLOWED_ARTIST_NATIONALITIES.KPOP,
+      ...REGION_GENRES.KPOP,
+      3,
+    ]);
+    expect(mockDb.query.mock.calls[1][1]).not.toEqual(
+      expect.arrayContaining(["Pop", "Rock", "Rap / Hip Hop"])
+    );
+    expect(mockDb.query.mock.calls[2][1]).not.toEqual(
+      expect.arrayContaining(["Pop", "Rock", "Rap / Hip Hop"])
+    );
+    expect(result).toMatchObject({
+      vietnam: [
+        {
+          rank: 1,
+          id: 1,
+          title: "Vietnam Song",
+        },
+      ],
+      usuk: [
+        {
+          rank: 1,
+          id: 2,
+          title: "USUK Song",
+        },
+      ],
+      kpop: [
+        {
+          rank: 1,
+          id: 3,
+          title: "K-pop Song",
+        },
+      ],
+    });
   });
 });
 
