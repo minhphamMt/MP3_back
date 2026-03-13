@@ -22,6 +22,7 @@ describe("search.service", () => {
     mockDb.query
       .mockResolvedValueOnce([[]])
       .mockResolvedValueOnce([[]])
+      .mockResolvedValueOnce([[]])
       .mockResolvedValueOnce([[]]);
 
     const { searchEntities } = await loadService();
@@ -46,21 +47,34 @@ describe("search.service", () => {
       },
     });
 
-    expect(mockDb.query).toHaveBeenCalledTimes(3);
+    expect(mockDb.query).toHaveBeenCalledTimes(4);
   });
 
-  it("returns grouped search results and counts the returned entities in meta.total", async () => {
+  it("returns close typo matches without spamming unrelated results", async () => {
     mockDb.query
       .mockResolvedValueOnce([
         [
           {
             id: 11,
-            title: "Zing Song",
+            title: "Tetvovo",
             artist_id: 21,
-            album_id: 31,
-            artist_name: "Artist Alpha",
-            album_title: "Album One",
-            score: 99,
+            album_id: null,
+            duration: 200,
+            audio_path: "/music/tetvovo.mp3",
+            cover_url: "/covers/tetvovo.jpg",
+            status: "approved",
+            play_count: 500,
+            release_date: "2025-01-01",
+            created_at: "2025-01-01T00:00:00.000Z",
+            artist_name: "Wxrdie",
+            artist_alias: "wrx",
+            artist_realname: "Nguyen Vu",
+            artist_names: "Wxrdie",
+            artist_aliases: "wrx",
+            artist_realnames: "Nguyen Vu",
+            album_title: "",
+            like_count: 50,
+            genre_names: "rap hip hop",
           },
         ],
       ])
@@ -68,10 +82,53 @@ describe("search.service", () => {
         [
           {
             id: 21,
-            name: "Artist Alpha",
-            alias: "zing alpha",
+            user_id: 2,
+            name: "Wxrdie",
+            alias: "wrx",
+            bio: "Rapper",
+            short_bio: "Rapper",
+            avatar_url: "/artists/wxrdie.jpg",
+            cover_url: "/artists/wxrdie-cover.jpg",
+            birthday: "2000-01-01",
+            realname: "Nguyen Vu",
+            national: "VN",
+            follow_count: 1200,
+            zing_artist_id: "zing-21",
+            is_deleted: 0,
+            deleted_at: null,
+            deleted_by: null,
+            deleted_by_role: null,
+            created_at: "2025-01-01T00:00:00.000Z",
+            updated_at: null,
             song_count: 10,
-            score: 50,
+            song_titles: "Tetvovo || Lau Dai Tinh Ai",
+            album_titles: "Wxrdie Collection",
+            genre_names: "rap hip hop",
+          },
+          {
+            id: 99,
+            user_id: 5,
+            name: "Random Artist",
+            alias: "random",
+            bio: "Other",
+            short_bio: "Other",
+            avatar_url: "/artists/random.jpg",
+            cover_url: "/artists/random-cover.jpg",
+            birthday: "1990-01-01",
+            realname: "Other Artist",
+            national: "VN",
+            follow_count: 50,
+            zing_artist_id: "zing-99",
+            is_deleted: 0,
+            deleted_at: null,
+            deleted_by: null,
+            deleted_by_role: null,
+            created_at: "2025-01-01T00:00:00.000Z",
+            updated_at: null,
+            song_count: 2,
+            song_titles: "Khong lien quan",
+            album_titles: "No Match",
+            genre_names: "pop",
           },
         ],
       ])
@@ -79,9 +136,21 @@ describe("search.service", () => {
         [
           {
             id: 31,
-            title: "Album One",
-            artist_name: "Artist Alpha",
-            score: 25,
+            zing_album_id: "zing-31",
+            title: "Wxrdie Collection",
+            artist_id: 21,
+            cover_url: "/albums/wxrdie.jpg",
+            release_date: "2025-01-01",
+            created_at: "2025-01-01T00:00:00.000Z",
+            is_deleted: 0,
+            deleted_at: null,
+            deleted_by: null,
+            deleted_by_role: null,
+            artist_name: "Wxrdie",
+            like_count: 70,
+            song_count: 8,
+            song_titles: "Tetvovo || Lau Dai Tinh Ai",
+            genre_names: "rap hip hop",
           },
         ],
       ])
@@ -92,14 +161,14 @@ describe("search.service", () => {
             artist_id: 21,
             artist_role: "primary",
             sort_order: 1,
-            artist_name: "Artist Alpha",
+            artist_name: "Wxrdie",
           },
         ],
       ]);
 
     const { searchEntities } = await loadService();
 
-    const result = await searchEntities(" zing ", {
+    const result = await searchEntities(" wrxdie ", {
       page: 1,
       limit: 10,
       offset: 0,
@@ -111,39 +180,160 @@ describe("search.service", () => {
       total: 3,
       totalPages: 1,
     });
+    expect(result.items.artists).toEqual([
+      expect.objectContaining({
+        id: 21,
+        name: "Wxrdie",
+      }),
+    ]);
+    expect(result.items.artists).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 99,
+        }),
+      ])
+    );
     expect(result.items.songs).toEqual([
       expect.objectContaining({
         id: 11,
-        title: "Zing Song",
+        title: "Tetvovo",
         artists: [
           {
             id: 21,
-            name: "Artist Alpha",
+            name: "Wxrdie",
             role: "primary",
             sort_order: 1,
           },
         ],
       }),
     ]);
-    expect(result.items.artists).toEqual([
-      expect.objectContaining({
-        id: 21,
-        name: "Artist Alpha",
-      }),
-    ]);
     expect(result.items.albums).toEqual([
       expect.objectContaining({
         id: 31,
-        title: "Album One",
+        title: "Wxrdie Collection",
       }),
     ]);
+  });
 
-    const [artistSearchSql] = mockDb.query.mock.calls[1];
-    expect(artistSearchSql).toContain(
-      "LEFT JOIN albums al_song_visibility ON al_song_visibility.id = s.album_id"
+  it("matches artist realname and surfaces related songs and albums tightly", async () => {
+    mockDb.query
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 41,
+            title: "Khong The Say",
+            artist_id: 51,
+            album_id: 61,
+            duration: 215,
+            audio_path: "/music/khong-the-say.mp3",
+            cover_url: "/covers/hieuthuhai.jpg",
+            status: "approved",
+            play_count: 900,
+            release_date: "2025-01-01",
+            created_at: "2025-01-01T00:00:00.000Z",
+            artist_name: "HIEUTHUHAI",
+            artist_alias: "hth",
+            artist_realname: "Hieu Thu Hai",
+            artist_names: "HIEUTHUHAI",
+            artist_aliases: "hth",
+            artist_realnames: "Hieu Thu Hai",
+            album_title: "Ai Cung Phai Bat Dau Tu Dau Do",
+            like_count: 120,
+            genre_names: "rap hip hop",
+          },
+        ],
+      ])
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 51,
+            user_id: 7,
+            name: "HIEUTHUHAI",
+            alias: "hth",
+            bio: "Rapper",
+            short_bio: "Rapper",
+            avatar_url: "/artists/hieuthuhai.jpg",
+            cover_url: "/artists/hieuthuhai-cover.jpg",
+            birthday: "1999-01-01",
+            realname: "Hieu Thu Hai",
+            national: "VN",
+            follow_count: 3400,
+            zing_artist_id: "zing-51",
+            is_deleted: 0,
+            deleted_at: null,
+            deleted_by: null,
+            deleted_by_role: null,
+            created_at: "2025-01-01T00:00:00.000Z",
+            updated_at: null,
+            song_count: 12,
+            song_titles: "Khong The Say || Exit Sign",
+            album_titles: "Ai Cung Phai Bat Dau Tu Dau Do",
+            genre_names: "rap hip hop",
+          },
+        ],
+      ])
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 61,
+            zing_album_id: "zing-61",
+            title: "Ai Cung Phai Bat Dau Tu Dau Do",
+            artist_id: 51,
+            cover_url: "/albums/hieuthuhai.jpg",
+            release_date: "2025-01-01",
+            created_at: "2025-01-01T00:00:00.000Z",
+            is_deleted: 0,
+            deleted_at: null,
+            deleted_by: null,
+            deleted_by_role: null,
+            artist_name: "HIEUTHUHAI",
+            artist_alias: "hth",
+            artist_realname: "Hieu Thu Hai",
+            like_count: 220,
+            song_count: 10,
+            song_titles: "Khong The Say || Exit Sign",
+            genre_names: "rap hip hop",
+          },
+        ],
+      ])
+      .mockResolvedValueOnce([
+        [
+          {
+            song_id: 41,
+            artist_id: 51,
+            artist_role: "primary",
+            sort_order: 1,
+            artist_name: "HIEUTHUHAI",
+          },
+        ],
+      ]);
+
+    const { searchEntities } = await loadService();
+
+    const result = await searchEntities(" hiếu thứ hai ", {
+      page: 1,
+      limit: 10,
+      offset: 0,
+    });
+
+    expect(result.items.artists[0]).toEqual(
+      expect.objectContaining({
+        id: 51,
+        name: "HIEUTHUHAI",
+      })
     );
-    expect(artistSearchSql).toContain("COUNT(DISTINCT CASE");
-    expect(mockDb.query).toHaveBeenCalledTimes(4);
+    expect(result.items.songs[0]).toEqual(
+      expect.objectContaining({
+        id: 41,
+        artist_name: "HIEUTHUHAI",
+      })
+    );
+    expect(result.items.albums[0]).toEqual(
+      expect.objectContaining({
+        id: 61,
+        artist_name: "HIEUTHUHAI",
+      })
+    );
   });
 
   it("returns distinct search history with accurate total count", async () => {
