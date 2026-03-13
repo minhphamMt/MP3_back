@@ -194,8 +194,6 @@ const createFuse = (documents, keys) =>
 
 const getFuseQueryTerms = (keyword) =>
   uniqueStrings([
-    normalizeKeyword(keyword),
-    normalizeKeyword(keyword).toLowerCase(),
     normalizeForSearch(keyword),
     compactSearchValue(keyword),
   ]);
@@ -225,7 +223,7 @@ const mergeFuseResults = (fuse, queryTerms, candidateLimit) => {
   for (const term of queryTerms) {
     if (!term) continue;
 
-    const searchResults = fuse.search(term).slice(0, candidateLimit);
+    const searchResults = fuse.search(term, { limit: candidateLimit });
     for (const result of searchResults) {
       const existing = merged.get(result.item.ref);
       if (!existing || (result.score ?? 1) < (existing.score ?? 1)) {
@@ -1410,4 +1408,12 @@ export const invalidateSearchIndexCache = (scope = null) => {
   }
 
   searchResultCache.clear();
+};
+
+export const primeSearchIndex = async (scope = "public") => {
+  try {
+    await refreshSearchIndex(scope);
+  } catch {
+    // Keep startup resilient if warming fails; search can still rebuild on demand.
+  }
 };
