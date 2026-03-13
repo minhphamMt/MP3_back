@@ -136,6 +136,59 @@ describe("song.service artist draft handling", () => {
       artists: [],
     });
   });
+
+  it("includes featured songs when listing songs by artist", async () => {
+    mockDb.query
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 77,
+            name: "Artist A",
+          },
+        ],
+      ])
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 901,
+            title: "Collab Song",
+            album_id: 15,
+            album_title: "Collab Album",
+            artist_id: 99,
+            release_date: "2026-02-01 00:00:00",
+            created_at: "2026-01-20 00:00:00",
+            published_date: "2026-02-01",
+          },
+        ],
+      ]);
+
+    const { listSongsByArtist } = await loadService();
+    const result = await listSongsByArtist(77, { includeUnreleased: true });
+
+    const [selectSql, selectParams] = mockDb.query.mock.calls[1];
+
+    expect(selectSql).toContain("FROM song_artists sa_artist");
+    expect(selectSql).toContain(
+      "ORDER BY COALESCE(s.release_date, DATE(s.created_at)) DESC, s.id DESC"
+    );
+    expect(selectParams).toEqual([77, 77]);
+    expect(result).toMatchObject({
+      artist: {
+        id: 77,
+        name: "Artist A",
+      },
+      songs: [
+        {
+          id: 901,
+          title: "Collab Song",
+          artist_id: 99,
+          album_id: 15,
+          album_title: "Collab Album",
+          published_date: "2026-02-01",
+        },
+      ],
+    });
+  });
 });
 
 describe("song.service play stats aggregation", () => {

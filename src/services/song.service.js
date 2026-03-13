@@ -906,7 +906,15 @@ export const listSongsByArtist = async (
       al.title AS album_title
     FROM songs s
     LEFT JOIN albums al ON s.album_id = al.id
-    WHERE s.artist_id = ?
+    WHERE (
+      s.artist_id = ?
+      OR EXISTS (
+        SELECT 1
+        FROM song_artists sa_artist
+        WHERE sa_artist.song_id = s.id
+          AND sa_artist.artist_id = ?
+      )
+    )
       AND s.is_deleted = 0
       AND ${includeUnreleased ? "1=1" : "s.status = 'approved'"}
       AND ${includeUnreleased ? "1=1" : "s.audio_path IS NOT NULL"}
@@ -917,7 +925,7 @@ export const listSongsByArtist = async (
       }
     ORDER BY COALESCE(s.release_date, DATE(s.created_at)) DESC, s.id DESC
     `,
-    [artistId]
+    [artistId, artistId]
   );
 
   return {

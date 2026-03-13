@@ -179,8 +179,15 @@ export const getArtistById = async (
     albumParams
   );
 
-  const songFilters = ["s.artist_id = ?"];
-  const songParams = [id];
+  const songFilters = [
+    `(s.artist_id = ? OR EXISTS (
+      SELECT 1
+      FROM song_artists sa_artist
+      WHERE sa_artist.song_id = s.id
+        AND sa_artist.artist_id = ?
+    ))`,
+  ];
+  const songParams = [id, id];
 
   if (!includeDeleted) {
     songFilters.push("s.is_deleted = 0");
@@ -217,6 +224,7 @@ export const getArtistById = async (
     SELECT
       s.*,
       al.title AS album_title,
+      COALESCE(s.release_date, DATE(s.created_at)) AS published_date,
       (SELECT GROUP_CONCAT(DISTINCT g2.name)
         FROM song_genres sg2
         JOIN genres g2 ON g2.id = sg2.genre_id
@@ -224,7 +232,7 @@ export const getArtistById = async (
     FROM songs s
     LEFT JOIN albums al ON al.id = s.album_id
     ${songWhere}
-    ORDER BY s.id DESC;
+    ORDER BY COALESCE(s.release_date, DATE(s.created_at)) DESC, s.id DESC;
   `,
     songParams
   );
