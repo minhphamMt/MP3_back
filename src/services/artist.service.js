@@ -4,6 +4,11 @@ import { buildPaginationMeta } from "../utils/pagination.js";
 import { generateZingId } from "../utils/Zing-id.js";
 import { buildSongPublicVisibilityCondition } from "../utils/song-visibility.js";
 import { invalidateSearchIndexCache } from "./search-index.service.js";
+import {
+  isSearchDocumentsEnabled,
+  getArtistSearchSyncGraph,
+  syncSearchDocumentsForGraph,
+} from "./search-document.service.js";
 
 const normalizeGenres = (genres) => {
   if (!genres) return [];
@@ -345,6 +350,11 @@ export const createArtist = async ({
     ]
   );
 
+  if (isSearchDocumentsEnabled()) {
+    await syncSearchDocumentsForGraph(
+      await getArtistSearchSyncGraph(result.insertId)
+    );
+  }
   invalidateSearchIndexCache();
   return getArtistById(result.insertId);
 };
@@ -403,6 +413,9 @@ export const updateArtist = async (
       `UPDATE artists SET ${fields.join(", ")} WHERE id = ?`,
       values
     );
+    if (isSearchDocumentsEnabled()) {
+      await syncSearchDocumentsForGraph(await getArtistSearchSyncGraph(id));
+    }
     invalidateSearchIndexCache();
   }
 
@@ -410,6 +423,9 @@ export const updateArtist = async (
 };
 
 export const deleteArtist = async (id) => {
+  const graph = isSearchDocumentsEnabled()
+    ? await getArtistSearchSyncGraph(id)
+    : null;
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
@@ -440,6 +456,9 @@ export const deleteArtist = async (id) => {
     }
 
     await connection.commit();
+    if (graph) {
+      await syncSearchDocumentsForGraph(graph);
+    }
     invalidateSearchIndexCache();
   } catch (error) {
     await connection.rollback();
@@ -471,6 +490,9 @@ export const softDeleteArtist = async (id, { deletedBy, deletedByRole }) => {
     `,
     [deletedBy || null, deletedByRole || null, id]
   );
+  if (isSearchDocumentsEnabled()) {
+    await syncSearchDocumentsForGraph(await getArtistSearchSyncGraph(id));
+  }
   invalidateSearchIndexCache();
 };
 
@@ -518,6 +540,9 @@ export const restoreArtist = async (
     [id]
   );
 
+  if (isSearchDocumentsEnabled()) {
+    await syncSearchDocumentsForGraph(await getArtistSearchSyncGraph(id));
+  }
   invalidateSearchIndexCache();
   return getArtistById(id, { includeUnreleased: true, includeDeleted: true });
 };

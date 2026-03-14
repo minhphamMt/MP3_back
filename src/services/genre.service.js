@@ -2,6 +2,11 @@ import db from "../config/db.js";
 import ROLES from "../constants/roles.js";
 import { buildPaginationMeta } from "../utils/pagination.js";
 import { invalidateSearchIndexCache } from "./search-index.service.js";
+import {
+  isSearchDocumentsEnabled,
+  getGenreSearchSyncGraph,
+  syncSearchDocumentsForGraph,
+} from "./search-document.service.js";
 
 const createError = (status, message) => {
   const error = new Error(message);
@@ -97,11 +102,17 @@ export const updateGenre = async (id, name) => {
     normalized,
     id,
   ]);
+  if (isSearchDocumentsEnabled()) {
+    await syncSearchDocumentsForGraph(await getGenreSearchSyncGraph(id));
+  }
   invalidateSearchIndexCache();
   return getGenreById(id);
 };
 
 export const deleteGenre = async (id) => {
+  const graph = isSearchDocumentsEnabled()
+    ? await getGenreSearchSyncGraph(id)
+    : null;
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
@@ -124,6 +135,9 @@ export const deleteGenre = async (id) => {
     }
 
     await connection.commit();
+    if (graph) {
+      await syncSearchDocumentsForGraph(graph);
+    }
     invalidateSearchIndexCache();
   } catch (error) {
     await connection.rollback();
@@ -160,6 +174,9 @@ export const softDeleteGenre = async (id, { deletedBy, deletedByRole }) => {
     `,
     [deletedBy || null, deletedByRole || null, id]
   );
+  if (isSearchDocumentsEnabled()) {
+    await syncSearchDocumentsForGraph(await getGenreSearchSyncGraph(id));
+  }
   invalidateSearchIndexCache();
 };
 
@@ -199,6 +216,9 @@ export const restoreGenre = async (
     [id]
   );
 
+  if (isSearchDocumentsEnabled()) {
+    await syncSearchDocumentsForGraph(await getGenreSearchSyncGraph(id));
+  }
   invalidateSearchIndexCache();
   return getGenreById(id);
 };

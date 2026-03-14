@@ -13,6 +13,45 @@ const normalizeForSearchDocuments = (keyword = "") =>
 const compactSearchValue = (value = "") =>
   normalizeForSearchDocuments(value).replace(/\s+/g, "");
 
+const uniqueIntegerIds = (values = []) =>
+  [...new Set(values.map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0))];
+
+const logarithmicScore = (value, weight) =>
+  Math.log1p(Math.max(Number(value) || 0, 0)) * weight;
+
+const getFreshnessScore = (dateValue) => {
+  if (!dateValue) return 0;
+
+  const timestamp = new Date(dateValue).getTime();
+  if (!Number.isFinite(timestamp)) return 0;
+
+  const ageInDays = Math.max(0, (Date.now() - timestamp) / (24 * 60 * 60 * 1000));
+
+  if (ageInDays <= 30) return 2.5;
+  if (ageInDays <= 180) return 1.5;
+  if (ageInDays <= 365) return 0.75;
+
+  return 0;
+};
+
+const buildSongPopularityScore = (row) =>
+  logarithmicScore(row.play_count, 1.6) +
+  logarithmicScore(row.like_count, 2.2) +
+  getFreshnessScore(row.release_date);
+
+const buildArtistPopularityScore = (row) =>
+  logarithmicScore(row.follow_count, 2.4) +
+  logarithmicScore(row.song_count, 1.2);
+
+const buildAlbumPopularityScore = (row) =>
+  logarithmicScore(row.like_count, 2.1) +
+  logarithmicScore(row.song_count, 1) +
+  getFreshnessScore(row.release_date);
+
+const normalizeDocumentValue = (value = "") => normalizeForSearchDocuments(value);
+
+const compactDocumentValue = (value = "") => compactSearchValue(value).slice(0, 512);
+
 const buildPattern = (value = "") => `%${value}%`;
 
 const buildPrefixPattern = (value = "") => `${value}%`;
@@ -579,4 +618,430 @@ export const searchEntitiesFromDocuments = async (
       Number(albumSearch.total || 0) +
       Number(userSearch.total || 0),
   };
+};
+
+const upsertSearchDocuments = async (documents = []) => {
+  for (const document of documents) {
+    await db.query(
+      `
+      INSERT INTO search_documents (
+        entity_type,
+        entity_id,
+        scope,
+        title,
+        subtitle,
+        primary_text,
+        primary_text_norm,
+        primary_text_compact,
+        priority_text,
+        priority_text_norm,
+        match_text,
+        match_text_norm,
+        search_text,
+        search_text_norm,
+        popularity_score,
+        freshness_score,
+        is_active,
+        source_updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        title = VALUES(title),
+        subtitle = VALUES(subtitle),
+        primary_text = VALUES(primary_text),
+        primary_text_norm = VALUES(primary_text_norm),
+        primary_text_compact = VALUES(primary_text_compact),
+        priority_text = VALUES(priority_text),
+        priority_text_norm = VALUES(priority_text_norm),
+        match_text = VALUES(match_text),
+        match_text_norm = VALUES(match_text_norm),
+        search_text = VALUES(search_text),
+        search_text_norm = VALUES(search_text_norm),
+        popularity_score = VALUES(popularity_score),
+        freshness_score = VALUES(freshness_score),
+        is_active = VALUES(is_active),
+        source_updated_at = VALUES(source_updated_at),
+        updated_at = CURRENT_TIMESTAMP
+      `,
+      [
+        document.entity_type,
+        document.entity_id,
+        document.scope,
+        document.title,
+        document.subtitle,
+        document.primary_text,
+        document.primary_text_norm,
+        document.primary_text_compact,
+        document.priority_text,
+        document.priority_text_norm,
+        document.match_text,
+        document.match_text_norm,
+        document.search_text,
+        document.search_text_norm,
+        document.popularity_score,
+        document.freshness_score,
+        document.is_active,
+        document.source_updated_at,
+      ]
+    );
+  }
+};
+
+const deleteSearchDocuments = async (entityType, entityIds = [], scope = null) => {
+  const normalizedIds = uniqueIntegerIds(entityIds);
+  if (!normalizedIds.length) return;
+
+  const placeholders = normalizedIds.map(() => "?").join(",");
+  const scopeClause = scope ? "AND scope = ?" : "";
+  await db.query(
+    `
+    DELETE FROM search_documents
+    WHERE entity_type = ?
+      ${scopeClause}
+      AND entity_id IN (${placeholders})
+    `,
+    [entityType, ...(scope ? [scope] : []), ...normalizedIds]
+  );
+};
+
+const createSearchDocumentRecord = ({
+  entityType,
+  entityId,
+  scope,
+  title,
+  subtitle,
+  primaryText,
+  priorityText,
+  matchText,
+  searchText,
+  popularityScore,
+  freshnessScore,
+  sourceUpdatedAt,
+}) => ({
+  entity_type: entityType,
+  entity_id: entityId,
+  scope,
+  title: title || null,
+  subtitle: subtitle || null,
+  primary_text: primaryText || null,
+  primary_text_norm: normalizeDocumentValue(primaryText).slice(0, 512),
+  primary_text_compact: compactDocumentValue(primaryText),
+  priority_text: priorityText || null,
+  priority_text_norm: normalizeDocumentValue(priorityText) || null,
+  match_text: matchText || null,
+  match_text_norm: normalizeDocumentValue(matchText) || null,
+  search_text: searchText || "",
+  search_text_norm: normalizeDocumentValue(searchText),
+  popularity_score: Number(popularityScore || 0),
+  freshness_score: Number(freshnessScore || 0),
+  is_active: 1,
+  source_updated_at: sourceUpdatedAt || null,
+});
+
+const buildSongSearchDocuments = (songs = [], scope = "public") =>
+  songs.map((song) => {
+    const subtitle = song.artist_names || song.artist_name || "";
+    const priorityText = normalizeKeyword(
+      [song.artist_names, song.artist_name, song.artist_aliases, song.artist_alias, song.artist_realnames, song.artist_realname]
+        .filter(Boolean)
+        .join(" ")
+    );
+    const matchText = normalizeKeyword([song.album_title, song.genre_names].filter(Boolean).join(" "));
+    const searchText = normalizeKeyword(
+      [song.title, priorityText, matchText].filter(Boolean).join(" ")
+    );
+
+    return createSearchDocumentRecord({
+      entityType: "song",
+      entityId: song.id,
+      scope,
+      title: song.title,
+      subtitle,
+      primaryText: song.title,
+      priorityText,
+      matchText,
+      searchText,
+      popularityScore: buildSongPopularityScore(song),
+      freshnessScore: getFreshnessScore(song.release_date),
+      sourceUpdatedAt: song.deleted_at || song.created_at,
+    });
+  });
+
+const buildArtistSearchDocuments = (artists = [], scope = "public") =>
+  artists.map((artist) => {
+    const subtitle = normalizeKeyword([artist.alias, artist.realname].filter(Boolean).join(" "));
+    const priorityText = subtitle;
+    const matchText = normalizeKeyword(
+      [artist.song_titles, artist.album_titles, artist.genre_names, artist.national]
+        .filter(Boolean)
+        .join(" ")
+    );
+    const searchText = normalizeKeyword(
+      [artist.name, artist.alias, artist.realname, artist.song_titles, artist.album_titles, artist.genre_names, artist.national]
+        .filter(Boolean)
+        .join(" ")
+    );
+
+    return createSearchDocumentRecord({
+      entityType: "artist",
+      entityId: artist.id,
+      scope,
+      title: artist.name,
+      subtitle,
+      primaryText: artist.name,
+      priorityText,
+      matchText,
+      searchText,
+      popularityScore: buildArtistPopularityScore(artist),
+      freshnessScore: 0,
+      sourceUpdatedAt: artist.deleted_at || artist.created_at,
+    });
+  });
+
+const buildAlbumSearchDocuments = (albums = [], scope = "public") =>
+  albums.map((album) => {
+    const subtitle = album.artist_name || "";
+    const priorityText = normalizeKeyword(
+      [album.artist_name, album.artist_alias, album.artist_realname].filter(Boolean).join(" ")
+    );
+    const matchText = normalizeKeyword([album.song_titles, album.genre_names].filter(Boolean).join(" "));
+    const searchText = normalizeKeyword(
+      [album.title, priorityText, matchText].filter(Boolean).join(" ")
+    );
+
+    return createSearchDocumentRecord({
+      entityType: "album",
+      entityId: album.id,
+      scope,
+      title: album.title,
+      subtitle,
+      primaryText: album.title,
+      priorityText,
+      matchText,
+      searchText,
+      popularityScore: buildAlbumPopularityScore(album),
+      freshnessScore: getFreshnessScore(album.release_date),
+      sourceUpdatedAt: album.deleted_at || album.created_at,
+    });
+  });
+
+const syncEntityDocuments = async ({
+  entityType,
+  entityIds,
+  fetchPublicRows,
+  fetchAdminRows,
+  buildPublicDocuments,
+  buildAdminDocuments,
+}) => {
+  const normalizedIds = uniqueIntegerIds(entityIds);
+  if (!normalizedIds.length) return;
+
+  const [publicRows, adminRows] = await Promise.all([
+    fetchPublicRows(normalizedIds),
+    fetchAdminRows(normalizedIds),
+  ]);
+
+  const publicIds = new Set(publicRows.map((row) => Number(row.id)));
+  const adminIds = new Set(adminRows.map((row) => Number(row.id)));
+
+  await upsertSearchDocuments(buildPublicDocuments(publicRows));
+  await upsertSearchDocuments(buildAdminDocuments(adminRows));
+
+  const missingPublicIds = normalizedIds.filter((id) => !publicIds.has(id));
+  const missingAdminIds = normalizedIds.filter((id) => !adminIds.has(id));
+
+  await deleteSearchDocuments(entityType, missingPublicIds, "public");
+  await deleteSearchDocuments(entityType, missingAdminIds, "admin");
+};
+
+const syncSongDocuments = async (songIds = []) =>
+  syncEntityDocuments({
+    entityType: "song",
+    entityIds: songIds,
+    fetchPublicRows: (ids) => getSongsByIds(ids, "public"),
+    fetchAdminRows: (ids) => getSongsByIds(ids, "admin"),
+    buildPublicDocuments: (rows) => buildSongSearchDocuments(rows, "public"),
+    buildAdminDocuments: (rows) => buildSongSearchDocuments(rows, "admin"),
+  });
+
+const syncArtistDocuments = async (artistIds = []) =>
+  syncEntityDocuments({
+    entityType: "artist",
+    entityIds: artistIds,
+    fetchPublicRows: (ids) => getArtistsByIds(ids, "public"),
+    fetchAdminRows: (ids) => getArtistsByIds(ids, "admin"),
+    buildPublicDocuments: (rows) => buildArtistSearchDocuments(rows, "public"),
+    buildAdminDocuments: (rows) => buildArtistSearchDocuments(rows, "admin"),
+  });
+
+const syncAlbumDocuments = async (albumIds = []) =>
+  syncEntityDocuments({
+    entityType: "album",
+    entityIds: albumIds,
+    fetchPublicRows: (ids) => getAlbumsByIds(ids, "public"),
+    fetchAdminRows: (ids) => getAlbumsByIds(ids, "admin"),
+    buildPublicDocuments: (rows) => buildAlbumSearchDocuments(rows, "public"),
+    buildAdminDocuments: (rows) => buildAlbumSearchDocuments(rows, "admin"),
+  });
+
+const getRelatedArtistsAndAlbumsForSongs = async (songIds = []) => {
+  const normalizedSongIds = uniqueIntegerIds(songIds);
+  if (!normalizedSongIds.length) {
+    return { artistIds: [], albumIds: [] };
+  }
+
+  const placeholders = normalizedSongIds.map(() => "?").join(",");
+  const [songRows] = await db.query(
+    `
+    SELECT artist_id, album_id
+    FROM songs
+    WHERE id IN (${placeholders})
+    `,
+    normalizedSongIds
+  );
+  const [songArtistRows] = await db.query(
+    `
+    SELECT DISTINCT artist_id
+    FROM song_artists
+    WHERE song_id IN (${placeholders})
+    `,
+    normalizedSongIds
+  );
+
+  return {
+    artistIds: uniqueIntegerIds([
+      ...songRows.map((row) => row.artist_id),
+      ...songArtistRows.map((row) => row.artist_id),
+    ]),
+    albumIds: uniqueIntegerIds(songRows.map((row) => row.album_id)),
+  };
+};
+
+export const getSongSearchSyncGraph = async (songId) => {
+  const normalizedSongIds = uniqueIntegerIds([songId]);
+  if (!normalizedSongIds.length) {
+    return { songIds: [], artistIds: [], albumIds: [] };
+  }
+
+  const related = await getRelatedArtistsAndAlbumsForSongs(normalizedSongIds);
+  return {
+    songIds: normalizedSongIds,
+    artistIds: related.artistIds,
+    albumIds: related.albumIds,
+  };
+};
+
+export const getArtistSearchSyncGraph = async (artistId) => {
+  const normalizedArtistIds = uniqueIntegerIds([artistId]);
+  if (!normalizedArtistIds.length) {
+    return { songIds: [], artistIds: [], albumIds: [] };
+  }
+
+  const [songRows] = await db.query(
+    `
+    SELECT DISTINCT s.id
+    FROM songs s
+    WHERE s.artist_id = ?
+    UNION
+    SELECT DISTINCT s.id
+    FROM songs s
+    JOIN song_artists sa ON sa.song_id = s.id
+    WHERE sa.artist_id = ?
+    `,
+    [normalizedArtistIds[0], normalizedArtistIds[0]]
+  );
+  const [albumRows] = await db.query(
+    `
+    SELECT id
+    FROM albums
+    WHERE artist_id = ?
+    `,
+    [normalizedArtistIds[0]]
+  );
+
+  return {
+    songIds: uniqueIntegerIds(songRows.map((row) => row.id)),
+    artistIds: normalizedArtistIds,
+    albumIds: uniqueIntegerIds(albumRows.map((row) => row.id)),
+  };
+};
+
+export const getAlbumSearchSyncGraph = async (albumId) => {
+  const normalizedAlbumIds = uniqueIntegerIds([albumId]);
+  if (!normalizedAlbumIds.length) {
+    return { songIds: [], artistIds: [], albumIds: [] };
+  }
+
+  const [albumRows] = await db.query(
+    `
+    SELECT artist_id
+    FROM albums
+    WHERE id = ?
+    `,
+    [normalizedAlbumIds[0]]
+  );
+  const [songRows] = await db.query(
+    `
+    SELECT id
+    FROM songs
+    WHERE album_id = ?
+    `,
+    [normalizedAlbumIds[0]]
+  );
+
+  return {
+    songIds: uniqueIntegerIds(songRows.map((row) => row.id)),
+    artistIds: uniqueIntegerIds(albumRows.map((row) => row.artist_id)),
+    albumIds: normalizedAlbumIds,
+  };
+};
+
+export const getGenreSearchSyncGraph = async (genreId) => {
+  const normalizedGenreIds = uniqueIntegerIds([genreId]);
+  if (!normalizedGenreIds.length) {
+    return { songIds: [], artistIds: [], albumIds: [] };
+  }
+
+  const [songRows] = await db.query(
+    `
+    SELECT DISTINCT song_id
+    FROM song_genres
+    WHERE genre_id = ?
+    `,
+    [normalizedGenreIds[0]]
+  );
+  const songIds = uniqueIntegerIds(songRows.map((row) => row.song_id));
+  const related = await getRelatedArtistsAndAlbumsForSongs(songIds);
+
+  return {
+    songIds,
+    artistIds: related.artistIds,
+    albumIds: related.albumIds,
+  };
+};
+
+export const mergeSearchSyncGraphs = (...graphs) => ({
+  songIds: uniqueIntegerIds(graphs.flatMap((graph) => graph?.songIds || [])),
+  artistIds: uniqueIntegerIds(graphs.flatMap((graph) => graph?.artistIds || [])),
+  albumIds: uniqueIntegerIds(graphs.flatMap((graph) => graph?.albumIds || [])),
+});
+
+export const syncSearchDocumentsForGraph = async (graph = {}) => {
+  if (!isSearchDocumentsEnabled()) {
+    return;
+  }
+
+  try {
+    await Promise.all([
+      syncSongDocuments(graph.songIds),
+      syncArtistDocuments(graph.artistIds),
+      syncAlbumDocuments(graph.albumIds),
+    ]);
+  } catch (error) {
+    if (error?.code === "ER_NO_SUCH_TABLE") {
+      return;
+    }
+
+    throw error;
+  }
 };

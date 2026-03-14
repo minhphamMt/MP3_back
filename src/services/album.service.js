@@ -3,6 +3,11 @@ import ROLES from "../constants/roles.js";
 import { buildPaginationMeta } from "../utils/pagination.js";
 import { buildSongPublicVisibilityCondition } from "../utils/song-visibility.js";
 import { invalidateSearchIndexCache } from "./search-index.service.js";
+import {
+  isSearchDocumentsEnabled,
+  getAlbumSearchSyncGraph,
+  syncSearchDocumentsForGraph,
+} from "./search-document.service.js";
 
 const createError = (status, message) => {
   const error = new Error(message);
@@ -225,6 +230,11 @@ export const createAlbum = async ({
     ]
   );
 
+  if (isSearchDocumentsEnabled()) {
+    await syncSearchDocumentsForGraph(
+      await getAlbumSearchSyncGraph(result.insertId)
+    );
+  }
   invalidateSearchIndexCache();
   return getAlbumById(result.insertId);
 };
@@ -267,12 +277,18 @@ export const updateAlbum = async (
     values
   );
 
+  if (isSearchDocumentsEnabled()) {
+    await syncSearchDocumentsForGraph(await getAlbumSearchSyncGraph(id));
+  }
   invalidateSearchIndexCache();
   return getAlbumById(id);
 };
 
 
 export const deleteAlbum = async (id) => {
+  const graph = isSearchDocumentsEnabled()
+    ? await getAlbumSearchSyncGraph(id)
+    : null;
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
@@ -295,6 +311,9 @@ export const deleteAlbum = async (id) => {
     }
 
     await connection.commit();
+    if (graph) {
+      await syncSearchDocumentsForGraph(graph);
+    }
     invalidateSearchIndexCache();
   } catch (error) {
     await connection.rollback();
@@ -327,6 +346,9 @@ export const softDeleteAlbum = async (id, { deletedBy, deletedByRole }) => {
     `,
     [deletedBy || null, deletedByRole || null, id]
   );
+  if (isSearchDocumentsEnabled()) {
+    await syncSearchDocumentsForGraph(await getAlbumSearchSyncGraph(id));
+  }
   invalidateSearchIndexCache();
 };
 
@@ -374,6 +396,9 @@ export const restoreAlbum = async (
     [id]
   );
 
+  if (isSearchDocumentsEnabled()) {
+    await syncSearchDocumentsForGraph(await getAlbumSearchSyncGraph(id));
+  }
   invalidateSearchIndexCache();
   return getAlbumById(id, { includeSongs: true, includeUnreleased: true, includeDeleted: true });
 };

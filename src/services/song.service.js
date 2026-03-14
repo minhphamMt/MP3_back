@@ -4,6 +4,12 @@ import SONG_STATUS from "../constants/song-status.js";
 import { recordListeningHistory } from "./history.service.js";
 import { buildSongPublicVisibilityCondition } from "../utils/song-visibility.js";
 import {
+  isSearchDocumentsEnabled,
+  getSongSearchSyncGraph,
+  mergeSearchSyncGraphs,
+  syncSearchDocumentsForGraph,
+} from "./search-document.service.js";
+import {
   DEFAULT_TIME_ZONE,
   getCurrentDateInTimeZone,
   getStartOfWeekDateString,
@@ -298,6 +304,9 @@ export const reviewSong = async (
     ]
   );
 
+  if (isSearchDocumentsEnabled()) {
+    await syncSearchDocumentsForGraph(await getSongSearchSyncGraph(songId));
+  }
   invalidateSearchIndexCache();
   return getSongById(songId, { includeUnreleased: true });
 };
@@ -703,6 +712,9 @@ export const createSong = async ({
 
   await syncSongArtists(result.insertId, normalizedArtistIds);
   await syncSongGenres(result.insertId, genres);
+  if (isSearchDocumentsEnabled()) {
+    await syncSearchDocumentsForGraph(await getSongSearchSyncGraph(result.insertId));
+  }
   invalidateSearchIndexCache();
   return getSongById(result.insertId, { includeUnreleased: true });
 };
@@ -735,6 +747,15 @@ export const updateSong = async (
   if (status && !allowedStatuses.includes(status)) {
     throw createError(400, "Invalid status");
   }
+
+  const shouldSyncSearchDocuments =
+    isSearchDocumentsEnabled() &&
+    [title, artist_id, artist_ids, album_id, status, release_date, genres].some(
+      (value) => value !== undefined
+    );
+  const beforeGraph = shouldSyncSearchDocuments
+    ? await getSongSearchSyncGraph(id)
+    : null;
 
   const normalizedAlbumId = normalizeNullableId(album_id);
   const normalizedReleaseDate = normalizeNullableDate(release_date);
@@ -789,6 +810,12 @@ export const updateSong = async (
   }
 
   if (shouldInvalidate) {
+    if (shouldSyncSearchDocuments) {
+      const afterGraph = await getSongSearchSyncGraph(id);
+      await syncSearchDocumentsForGraph(
+        mergeSearchSyncGraphs(beforeGraph, afterGraph)
+      );
+    }
     invalidateSearchIndexCache();
   }
 
@@ -796,9 +823,15 @@ export const updateSong = async (
 };
 
 export const deleteSong = async (id) => {
+  const graph = isSearchDocumentsEnabled()
+    ? await getSongSearchSyncGraph(id)
+    : null;
   const [result] = await db.query("DELETE FROM songs WHERE id = ?", [id]);
   if (!result.affectedRows) {
     throw createError(404, "Song not found");
+  }
+  if (graph) {
+    await syncSearchDocumentsForGraph(graph);
   }
   invalidateSearchIndexCache();
 };
@@ -825,6 +858,9 @@ export const softDeleteSong = async (id, { deletedBy, deletedByRole }) => {
     `,
     [deletedBy || null, deletedByRole || null, id]
   );
+  if (isSearchDocumentsEnabled()) {
+    await syncSearchDocumentsForGraph(await getSongSearchSyncGraph(id));
+  }
   invalidateSearchIndexCache();
 };
 
@@ -872,6 +908,9 @@ export const restoreSong = async (
     [id]
   );
 
+  if (isSearchDocumentsEnabled()) {
+    await syncSearchDocumentsForGraph(await getSongSearchSyncGraph(id));
+  }
   invalidateSearchIndexCache();
   return getSongById(id, { includeUnreleased: true, includeDeleted: true });
 };
