@@ -1,17 +1,39 @@
 import db from "../config/db.js";
 import { buildPaginationMeta } from "../utils/pagination.js";
 import { normalizeKeyword } from "../utils/search-normalize.js";
+import {
+  isSearchDocumentsEnabled,
+  searchEntitiesFromDocuments,
+} from "./search-document.service.js";
 import { searchIndexedEntities } from "./search-index.service.js";
 
 const SEARCH_HISTORY_LIMIT = 20;
 
 export const searchEntities = async (keyword, options = {}) => {
-  const result = await searchIndexedEntities(keyword, {
-    limit: options.limit,
-    offset: options.offset,
-    scope: "public",
-    userId: options.userId,
-  });
+  let result;
+
+  if (isSearchDocumentsEnabled()) {
+    try {
+      result = await searchEntitiesFromDocuments(keyword, {
+        limit: options.limit,
+        offset: options.offset,
+        scope: "public",
+      });
+    } catch (error) {
+      if (error?.code !== "ER_NO_SUCH_TABLE") {
+        throw error;
+      }
+    }
+  }
+
+  if (!result || result.total === 0) {
+    result = await searchIndexedEntities(keyword, {
+      limit: options.limit,
+      offset: options.offset,
+      scope: "public",
+      userId: options.userId,
+    });
+  }
 
   return {
     items: result.items,
@@ -20,11 +42,29 @@ export const searchEntities = async (keyword, options = {}) => {
 };
 
 export const searchAdminEntities = async (keyword, options = {}) => {
-  const result = await searchIndexedEntities(keyword, {
-    limit: options.limit,
-    offset: options.offset,
-    scope: "admin",
-  });
+  let result;
+
+  if (isSearchDocumentsEnabled()) {
+    try {
+      result = await searchEntitiesFromDocuments(keyword, {
+        limit: options.limit,
+        offset: options.offset,
+        scope: "admin",
+      });
+    } catch (error) {
+      if (error?.code !== "ER_NO_SUCH_TABLE") {
+        throw error;
+      }
+    }
+  }
+
+  if (!result || result.total === 0) {
+    result = await searchIndexedEntities(keyword, {
+      limit: options.limit,
+      offset: options.offset,
+      scope: "admin",
+    });
+  }
 
   return {
     items: result.items,

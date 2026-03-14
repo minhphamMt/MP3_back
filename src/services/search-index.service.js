@@ -19,6 +19,9 @@ const SEARCH_RESULT_TTL_MS = Number(process.env.SEARCH_RESULT_TTL_MS) > 0
   ? Number(process.env.SEARCH_RESULT_TTL_MS)
   : 15 * 1000;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const SEARCH_LOOKUP_MIN_LENGTH = 3;
+const SEARCH_LOOKUP_MAX_PREFIX_LENGTH = 24;
+const SEARCH_LOOKUP_MAX_RESULTS = 240;
 
 const searchIndexCache = {
   public: {
@@ -73,6 +76,66 @@ const createFieldIndex = (values = []) => {
     normalized,
     compact,
   };
+};
+
+const appendLookupRef = (lookup, key, ref) => {
+  if (!key) return;
+
+  const refs = lookup.get(key);
+  if (refs) {
+    refs.push(ref);
+    return;
+  }
+
+  lookup.set(key, [ref]);
+};
+
+const indexLookupPrefixes = (lookup, value, ref) => {
+  if (!value || value.length < SEARCH_LOOKUP_MIN_LENGTH) {
+    return;
+  }
+
+  const maxPrefixLength = Math.min(value.length, SEARCH_LOOKUP_MAX_PREFIX_LENGTH);
+  for (let length = SEARCH_LOOKUP_MIN_LENGTH; length <= maxPrefixLength; length += 1) {
+    appendLookupRef(lookup, value.slice(0, length), ref);
+  }
+};
+
+const indexLookupField = (lookups, fieldIndex, ref) => {
+  const normalizedValues = fieldIndex?.normalized || [];
+  const compactValues = fieldIndex?.compact || [];
+
+  normalizedValues.forEach((value, index) => {
+    appendLookupRef(lookups.exactNormalized, value, ref);
+    indexLookupPrefixes(lookups.prefixNormalized, value, ref);
+
+    const compactValue = compactValues[index];
+    if (!compactValue) {
+      return;
+    }
+
+    appendLookupRef(lookups.exactCompact, compactValue, ref);
+    indexLookupPrefixes(lookups.prefixCompact, compactValue, ref);
+  });
+};
+
+const createSearchLookup = (documents = []) => {
+  const lookups = {
+    byRef: new Map(),
+    exactNormalized: new Map(),
+    exactCompact: new Map(),
+    prefixNormalized: new Map(),
+    prefixCompact: new Map(),
+  };
+
+  for (const document of documents) {
+    lookups.byRef.set(document.ref, document);
+    indexLookupField(lookups, document.primary_index, document.ref);
+    indexLookupField(lookups, document.priority_index, document.ref);
+    indexLookupField(lookups, document.match_index, document.ref);
+  }
+
+  return lookups;
 };
 
 const buildSearchText = (...values) => {
@@ -646,6 +709,12 @@ const buildUserDocuments = (rows) =>
 
 const createSearchIndex = (documents) => ({
   documents,
+  lookups: {
+    songs: createSearchLookup(documents.songs),
+    artists: createSearchLookup(documents.artists),
+    albums: createSearchLookup(documents.albums),
+    users: createSearchLookup(documents.users),
+  },
   fuses: {
     songs: createFuse(documents.songs, [
       { name: "search_title", weight: 0.4 },
@@ -698,6 +767,68 @@ const setCachedSearchResult = (cacheKey, data) => {
     data,
     expiresAt: Date.now() + SEARCH_RESULT_TTL_MS,
   });
+};
+
+const getStrongLookupResults = (searchLookup, searchContext) => {
+  if (!searchLookup || searchContext.compactLength < SEARCH_LOOKUP_MIN_LENGTH) {
+    return null;
+  }
+
+  const candidates = new Map();
+  let hasStrongMatch = false;
+  let overflow = false;
+
+  const register = (refs, score, strength) => {
+    if (!refs?.length) {
+      return;
+    }
+
+    hasStrongMatch = true;
+    if (refs.length > SEARCH_LOOKUP_MAX_RESULTS) {
+      overflow = true;
+      return;
+    }
+
+    for (const ref of refs) {
+      const document = searchLookup.byRef.get(ref);
+      if (!document) continue;
+
+      const existing = candidates.get(ref);
+      if (!existing) {
+        candidates.set(ref, {
+          item: document,
+          score,
+          strength,
+        });
+        continue;
+      }
+
+      existing.score = Math.min(existing.score, score);
+      existing.strength = Math.max(existing.strength, strength);
+    }
+  };
+
+  register(searchLookup.exactNormalized.get(searchContext.normalizedKeyword), 0.001, 3);
+  register(searchLookup.exactCompact.get(searchContext.compactKeyword), 0.001, 3);
+  register(searchLookup.prefixNormalized.get(searchContext.normalizedKeyword), 0.03, 2);
+  register(searchLookup.prefixCompact.get(searchContext.compactKeyword), 0.03, 2);
+
+  if (!hasStrongMatch || overflow || candidates.size > SEARCH_LOOKUP_MAX_RESULTS) {
+    return null;
+  }
+
+  return [...candidates.values()]
+    .sort(
+      (left, right) =>
+        left.score - right.score ||
+        right.strength - left.strength ||
+        right.item.popularity_score - left.item.popularity_score ||
+        String(left.item.primary_text).localeCompare(String(right.item.primary_text))
+    )
+    .map(({ item, score }) => ({
+      item,
+      score,
+    }));
 };
 
 const loadSongArtists = async (includeDeleted) => {
@@ -1280,7 +1411,7 @@ const getSearchIndex = async (scope) => {
 
 const searchTypedDocuments = async (
   searchContext,
-  { documents, fuse, limit, offset, userSignals }
+  { documents, lookup, fuse, limit, offset, userSignals }
 ) => {
   if (!documents.length) {
     return {
@@ -1297,12 +1428,12 @@ const searchTypedDocuments = async (
   }
 
   const candidateLimit = getCandidateLimit(searchContext, limit, offset);
+  const lookupResults = getStrongLookupResults(lookup, searchContext);
+  const candidateResults =
+    lookupResults ||
+    mergeFuseResults(fuse, searchContext.queryTerms, candidateLimit);
 
-  const rankedResults = mergeFuseResults(
-    fuse,
-    searchContext.queryTerms,
-    candidateLimit
-  )
+  const rankedResults = candidateResults
     .map((result) => rankSearchResult(result, searchContext, userSignals))
     .filter(Boolean)
     .sort(
@@ -1357,6 +1488,7 @@ export const searchIndexedEntities = async (
   const [songs, artists, albums, users] = await Promise.all([
     searchTypedDocuments(searchContext, {
       documents: searchIndex.documents.songs,
+      lookup: searchIndex.lookups.songs,
       fuse: searchIndex.fuses.songs,
       limit,
       offset,
@@ -1364,6 +1496,7 @@ export const searchIndexedEntities = async (
     }),
     searchTypedDocuments(searchContext, {
       documents: searchIndex.documents.artists,
+      lookup: searchIndex.lookups.artists,
       fuse: searchIndex.fuses.artists,
       limit,
       offset,
@@ -1371,6 +1504,7 @@ export const searchIndexedEntities = async (
     }),
     searchTypedDocuments(searchContext, {
       documents: searchIndex.documents.albums,
+      lookup: searchIndex.lookups.albums,
       fuse: searchIndex.fuses.albums,
       limit,
       offset,
@@ -1379,6 +1513,7 @@ export const searchIndexedEntities = async (
     scope === "admin"
       ? searchTypedDocuments(searchContext, {
           documents: searchIndex.documents.users,
+          lookup: searchIndex.lookups.users,
           fuse: searchIndex.fuses.users,
           limit,
           offset,
@@ -1404,15 +1539,25 @@ export const searchIndexedEntities = async (
 
 export const invalidateSearchIndexCache = (scope = null) => {
   const scopes = scope ? [scope] : Object.keys(searchIndexCache);
+  const staleDeadline = Date.now() + SEARCH_INDEX_STALE_MS;
 
   for (const key of scopes) {
-    if (!searchIndexCache[key]) continue;
-    searchIndexCache[key] = {
-      data: null,
-      expiresAt: 0,
-      staleAt: 0,
-      promise: null,
-    };
+    const cacheEntry = searchIndexCache[key];
+    if (!cacheEntry) continue;
+
+    searchIndexCache[key] = cacheEntry.data
+      ? {
+          data: cacheEntry.data,
+          expiresAt: 0,
+          staleAt: staleDeadline,
+          promise: null,
+        }
+      : {
+          data: null,
+          expiresAt: 0,
+          staleAt: 0,
+          promise: null,
+        };
   }
 
   searchResultCache.clear();
