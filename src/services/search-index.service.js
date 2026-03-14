@@ -755,15 +755,15 @@ const loadPublicSongs = async () => {
       s.deleted_by,
       s.deleted_by_role,
       s.reject_reason,
-      ANY_VALUE(a.name) AS artist_name,
-      ANY_VALUE(a.alias) AS artist_alias,
-      ANY_VALUE(a.realname) AS artist_realname,
-      ANY_VALUE(al.title) AS album_title,
-      ANY_VALUE(COALESCE(sa_names.artist_names, a.name, '')) AS artist_names,
-      ANY_VALUE(COALESCE(sa_names.artist_aliases, a.alias, '')) AS artist_aliases,
-      ANY_VALUE(COALESCE(sa_names.artist_realnames, a.realname, '')) AS artist_realnames,
-      COALESCE(MAX(song_like_counts.like_count), 0) AS like_count,
-      COALESCE(GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ' '), '') AS genre_names
+      a.name AS artist_name,
+      a.alias AS artist_alias,
+      a.realname AS artist_realname,
+      al.title AS album_title,
+      COALESCE(sa_names.artist_names, a.name, '') AS artist_names,
+      COALESCE(sa_names.artist_aliases, a.alias, '') AS artist_aliases,
+      COALESCE(sa_names.artist_realnames, a.realname, '') AS artist_realnames,
+      COALESCE(song_like_counts.like_count, 0) AS like_count,
+      COALESCE(song_genre_names.genre_names, '') AS genre_names
     FROM songs s
     LEFT JOIN artists a ON a.id = s.artist_id AND a.is_deleted = 0
     LEFT JOIN albums al ON al.id = s.album_id AND al.is_deleted = 0
@@ -783,10 +783,15 @@ const loadPublicSongs = async () => {
       FROM song_likes
       GROUP BY song_id
     ) song_like_counts ON song_like_counts.song_id = s.id
-    LEFT JOIN song_genres sg ON sg.song_id = s.id
-    LEFT JOIN genres g ON g.id = sg.genre_id AND g.is_deleted = 0
+    LEFT JOIN (
+      SELECT
+        sg.song_id,
+        GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ' ') AS genre_names
+      FROM song_genres sg
+      JOIN genres g ON g.id = sg.genre_id AND g.is_deleted = 0
+      GROUP BY sg.song_id
+    ) song_genre_names ON song_genre_names.song_id = s.id
     WHERE ${buildSongPublicVisibilityCondition("s", { albumAlias: "al" })}
-    GROUP BY s.id
     `
   );
 
@@ -814,15 +819,15 @@ const loadAdminSongs = async () => {
       s.deleted_by,
       s.deleted_by_role,
       s.reject_reason,
-      ANY_VALUE(a.name) AS artist_name,
-      ANY_VALUE(a.alias) AS artist_alias,
-      ANY_VALUE(a.realname) AS artist_realname,
-      ANY_VALUE(al.title) AS album_title,
-      ANY_VALUE(COALESCE(sa_names.artist_names, a.name, '')) AS artist_names,
-      ANY_VALUE(COALESCE(sa_names.artist_aliases, a.alias, '')) AS artist_aliases,
-      ANY_VALUE(COALESCE(sa_names.artist_realnames, a.realname, '')) AS artist_realnames,
-      COALESCE(MAX(song_like_counts.like_count), 0) AS like_count,
-      COALESCE(GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ' '), '') AS genre_names
+      a.name AS artist_name,
+      a.alias AS artist_alias,
+      a.realname AS artist_realname,
+      al.title AS album_title,
+      COALESCE(sa_names.artist_names, a.name, '') AS artist_names,
+      COALESCE(sa_names.artist_aliases, a.alias, '') AS artist_aliases,
+      COALESCE(sa_names.artist_realnames, a.realname, '') AS artist_realnames,
+      COALESCE(song_like_counts.like_count, 0) AS like_count,
+      COALESCE(song_genre_names.genre_names, '') AS genre_names
     FROM songs s
     LEFT JOIN artists a ON a.id = s.artist_id
     LEFT JOIN albums al ON al.id = s.album_id
@@ -841,9 +846,14 @@ const loadAdminSongs = async () => {
       FROM song_likes
       GROUP BY song_id
     ) song_like_counts ON song_like_counts.song_id = s.id
-    LEFT JOIN song_genres sg ON sg.song_id = s.id
-    LEFT JOIN genres g ON g.id = sg.genre_id
-    GROUP BY s.id
+    LEFT JOIN (
+      SELECT
+        sg.song_id,
+        GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ' ') AS genre_names
+      FROM song_genres sg
+      JOIN genres g ON g.id = sg.genre_id
+      GROUP BY sg.song_id
+    ) song_genre_names ON song_genre_names.song_id = s.id
     `
   );
 
@@ -995,13 +1005,13 @@ const loadPublicAlbums = async () => {
       al.deleted_at,
       al.deleted_by,
       al.deleted_by_role,
-      ANY_VALUE(ar.name) AS artist_name,
-      ANY_VALUE(ar.alias) AS artist_alias,
-      ANY_VALUE(ar.realname) AS artist_realname,
-      COALESCE(MAX(album_like_counts.like_count), 0) AS like_count,
-      COALESCE(MAX(song_stats.song_count), 0) AS song_count,
-      COALESCE(MAX(song_stats.song_titles), '') AS song_titles,
-      COALESCE(MAX(song_stats.genre_names), '') AS genre_names
+      ar.name AS artist_name,
+      ar.alias AS artist_alias,
+      ar.realname AS artist_realname,
+      COALESCE(album_like_counts.like_count, 0) AS like_count,
+      COALESCE(song_stats.song_count, 0) AS song_count,
+      COALESCE(song_stats.song_titles, '') AS song_titles,
+      COALESCE(song_stats.genre_names, '') AS genre_names
     FROM albums al
     LEFT JOIN artists ar ON ar.id = al.artist_id AND ar.is_deleted = 0
     LEFT JOIN (
@@ -1024,7 +1034,6 @@ const loadPublicAlbums = async () => {
     ) song_stats ON song_stats.album_id = al.id
     WHERE al.is_deleted = 0
       AND ${buildAlbumReleasedCondition("al")}
-    GROUP BY al.id
     `
   );
 
@@ -1046,13 +1055,13 @@ const loadAdminAlbums = async () => {
       al.deleted_at,
       al.deleted_by,
       al.deleted_by_role,
-      ANY_VALUE(ar.name) AS artist_name,
-      ANY_VALUE(ar.alias) AS artist_alias,
-      ANY_VALUE(ar.realname) AS artist_realname,
-      COALESCE(MAX(album_like_counts.like_count), 0) AS like_count,
-      COALESCE(MAX(song_stats.song_count), 0) AS song_count,
-      COALESCE(MAX(song_stats.song_titles), '') AS song_titles,
-      COALESCE(MAX(song_stats.genre_names), '') AS genre_names
+      ar.name AS artist_name,
+      ar.alias AS artist_alias,
+      ar.realname AS artist_realname,
+      COALESCE(album_like_counts.like_count, 0) AS like_count,
+      COALESCE(song_stats.song_count, 0) AS song_count,
+      COALESCE(song_stats.song_titles, '') AS song_titles,
+      COALESCE(song_stats.genre_names, '') AS genre_names
     FROM albums al
     LEFT JOIN artists ar ON ar.id = al.artist_id
     LEFT JOIN (
@@ -1071,7 +1080,6 @@ const loadAdminAlbums = async () => {
       LEFT JOIN genres g ON g.id = sg.genre_id
       GROUP BY s.album_id
     ) song_stats ON song_stats.album_id = al.id
-    GROUP BY al.id
     `
   );
 

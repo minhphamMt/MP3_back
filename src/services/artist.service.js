@@ -3,6 +3,7 @@ import ROLES from "../constants/roles.js";
 import { buildPaginationMeta } from "../utils/pagination.js";
 import { generateZingId } from "../utils/Zing-id.js";
 import { buildSongPublicVisibilityCondition } from "../utils/song-visibility.js";
+import { invalidateSearchIndexCache } from "./search-index.service.js";
 
 const normalizeGenres = (genres) => {
   if (!genres) return [];
@@ -344,6 +345,7 @@ export const createArtist = async ({
     ]
   );
 
+  invalidateSearchIndexCache();
   return getArtistById(result.insertId);
 };
 
@@ -401,6 +403,7 @@ export const updateArtist = async (
       `UPDATE artists SET ${fields.join(", ")} WHERE id = ?`,
       values
     );
+    invalidateSearchIndexCache();
   }
 
   return getArtistById(id);
@@ -437,6 +440,7 @@ export const deleteArtist = async (id) => {
     }
 
     await connection.commit();
+    invalidateSearchIndexCache();
   } catch (error) {
     await connection.rollback();
     throw error;
@@ -467,6 +471,7 @@ export const softDeleteArtist = async (id, { deletedBy, deletedByRole }) => {
     `,
     [deletedBy || null, deletedByRole || null, id]
   );
+  invalidateSearchIndexCache();
 };
 
 export const restoreArtist = async (
@@ -513,6 +518,7 @@ export const restoreArtist = async (
     [id]
   );
 
+  invalidateSearchIndexCache();
   return getArtistById(id, { includeUnreleased: true, includeDeleted: true });
 };
 export const listArtistCollections = async (limit = 8) => {

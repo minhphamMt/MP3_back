@@ -1,6 +1,7 @@
 import db from "../config/db.js";
 import ROLES from "../constants/roles.js";
 import { buildPaginationMeta } from "../utils/pagination.js";
+import { invalidateSearchIndexCache } from "./search-index.service.js";
 
 const createError = (status, message) => {
   const error = new Error(message);
@@ -67,6 +68,7 @@ export const createGenre = async (name) => {
     normalized,
   ]);
 
+  invalidateSearchIndexCache();
   return getGenreById(result.insertId);
 };
 
@@ -95,6 +97,7 @@ export const updateGenre = async (id, name) => {
     normalized,
     id,
   ]);
+  invalidateSearchIndexCache();
   return getGenreById(id);
 };
 
@@ -121,6 +124,7 @@ export const deleteGenre = async (id) => {
     }
 
     await connection.commit();
+    invalidateSearchIndexCache();
   } catch (error) {
     await connection.rollback();
     throw error;
@@ -156,6 +160,7 @@ export const softDeleteGenre = async (id, { deletedBy, deletedByRole }) => {
     `,
     [deletedBy || null, deletedByRole || null, id]
   );
+  invalidateSearchIndexCache();
 };
 
 export const restoreGenre = async (
@@ -194,6 +199,7 @@ export const restoreGenre = async (
     [id]
   );
 
+  invalidateSearchIndexCache();
   return getGenreById(id);
 };
 

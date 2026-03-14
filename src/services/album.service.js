@@ -2,6 +2,7 @@ import db from "../config/db.js";
 import ROLES from "../constants/roles.js";
 import { buildPaginationMeta } from "../utils/pagination.js";
 import { buildSongPublicVisibilityCondition } from "../utils/song-visibility.js";
+import { invalidateSearchIndexCache } from "./search-index.service.js";
 
 const createError = (status, message) => {
   const error = new Error(message);
@@ -196,6 +197,7 @@ export const updateAlbumCover = async (albumId, coverUrl) => {
     albumId,
   ]);
 
+  invalidateSearchIndexCache();
   return getAlbumById(albumId);
 };
 export const createAlbum = async ({
@@ -223,6 +225,7 @@ export const createAlbum = async ({
     ]
   );
 
+  invalidateSearchIndexCache();
   return getAlbumById(result.insertId);
 };
 
@@ -264,6 +267,7 @@ export const updateAlbum = async (
     values
   );
 
+  invalidateSearchIndexCache();
   return getAlbumById(id);
 };
 
@@ -291,6 +295,7 @@ export const deleteAlbum = async (id) => {
     }
 
     await connection.commit();
+    invalidateSearchIndexCache();
   } catch (error) {
     await connection.rollback();
     throw error;
@@ -322,6 +327,7 @@ export const softDeleteAlbum = async (id, { deletedBy, deletedByRole }) => {
     `,
     [deletedBy || null, deletedByRole || null, id]
   );
+  invalidateSearchIndexCache();
 };
 
 export const restoreAlbum = async (
@@ -368,6 +374,7 @@ export const restoreAlbum = async (
     [id]
   );
 
+  invalidateSearchIndexCache();
   return getAlbumById(id, { includeSongs: true, includeUnreleased: true, includeDeleted: true });
 };
 

@@ -8,6 +8,7 @@ import {
   getCurrentDateInTimeZone,
   getStartOfWeekDateString,
 } from "../utils/date-tz.js";
+import { invalidateSearchIndexCache } from "./search-index.service.js";
 
 const createError = (status, message) => {
   const error = new Error(message);
@@ -248,6 +249,7 @@ export const updateSongMedia = async (songId, { audioPath, coverUrl }) => {
   params.push(songId);
 
   await db.query(`UPDATE songs SET ${updates.join(", ")} WHERE id = ?`, params);
+  invalidateSearchIndexCache();
   return getSongById(songId, { includeUnreleased: true });
 };
 
@@ -272,31 +274,31 @@ export const reviewSong = async (
     throw createError(404, "Song not found");
   }
 
-await db.query(
-  `
-  UPDATE songs
-  SET
-    status = ?,
-    reviewed_by = ?,
-    reject_reason = ?,
-    reviewed_at = CURRENT_TIMESTAMP,
-    release_date = CASE
-      WHEN ? = 'approved' AND release_date IS NULL
-      THEN CURRENT_TIMESTAMP
-      ELSE release_date
-    END
-  WHERE id = ?
-  `,
-  [
-    status,
-    reviewerId || null,
-    status === SONG_STATUS.REJECTED ? rejectReason || null : null,
-    status,
-    songId,
-  ]
-);
+  await db.query(
+    `
+    UPDATE songs
+    SET
+      status = ?,
+      reviewed_by = ?,
+      reject_reason = ?,
+      reviewed_at = CURRENT_TIMESTAMP,
+      release_date = CASE
+        WHEN ? = 'approved' AND release_date IS NULL
+        THEN CURRENT_TIMESTAMP
+        ELSE release_date
+      END
+    WHERE id = ?
+    `,
+    [
+      status,
+      reviewerId || null,
+      status === SONG_STATUS.REJECTED ? rejectReason || null : null,
+      status,
+      songId,
+    ]
+  );
 
-
+  invalidateSearchIndexCache();
   return getSongById(songId, { includeUnreleased: true });
 };
 export const listSongs = async ({
@@ -701,6 +703,7 @@ export const createSong = async ({
 
   await syncSongArtists(result.insertId, normalizedArtistIds);
   await syncSongGenres(result.insertId, genres);
+  invalidateSearchIndexCache();
   return getSongById(result.insertId, { includeUnreleased: true });
 };
 
@@ -738,6 +741,7 @@ export const updateSong = async (
 
   const fields = [];
   const values = [];
+  let shouldInvalidate = false;
 
   const updatable = {
     title,
@@ -764,10 +768,12 @@ export const updateSong = async (
       `UPDATE songs SET ${fields.join(", ")} WHERE id = ?`,
       values
     );
+    shouldInvalidate = true;
   }
 
   if (genres !== undefined) {
     await syncSongGenres(id, genres);
+    shouldInvalidate = true;
   }
 
   if (artist_id !== undefined || artist_ids !== undefined) {
@@ -779,6 +785,11 @@ export const updateSong = async (
       throw createError(400, "artist_id or artist_ids is required");
     }
     await syncSongArtists(id, normalizedArtistIds);
+    shouldInvalidate = true;
+  }
+
+  if (shouldInvalidate) {
+    invalidateSearchIndexCache();
   }
 
   return getSongById(id, { includeUnreleased: true });
@@ -789,6 +800,7 @@ export const deleteSong = async (id) => {
   if (!result.affectedRows) {
     throw createError(404, "Song not found");
   }
+  invalidateSearchIndexCache();
 };
 export const softDeleteSong = async (id, { deletedBy, deletedByRole }) => {
   const [rows] = await db.query(
@@ -813,6 +825,7 @@ export const softDeleteSong = async (id, { deletedBy, deletedByRole }) => {
     `,
     [deletedBy || null, deletedByRole || null, id]
   );
+  invalidateSearchIndexCache();
 };
 
 export const restoreSong = async (
@@ -859,6 +872,7 @@ export const restoreSong = async (
     [id]
   );
 
+  invalidateSearchIndexCache();
   return getSongById(id, { includeUnreleased: true, includeDeleted: true });
 };
 export const listSongsByArtist = async (

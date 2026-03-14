@@ -471,4 +471,25 @@ describe("search.service", () => {
     });
     expect(mockDb.query).toHaveBeenCalledTimes(2);
   });
+
+  it("upserts normalized search history and trims old rows", async () => {
+    mockDb.query.mockResolvedValueOnce([{}]).mockResolvedValueOnce([{}]);
+
+    const { saveSearchHistory } = await loadService();
+
+    await saveSearchHistory("  Hiếu   thứ hai  ", 9);
+
+    expect(mockDb.query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining(
+        "INSERT INTO search_history (user_id, keyword, keyword_norm)"
+      ),
+      [9, "Hiếu thứ hai", "hiếu thứ hai"]
+    );
+    expect(mockDb.query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("DELETE sh"),
+      [9, 20, 9]
+    );
+  });
 });

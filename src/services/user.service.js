@@ -2,6 +2,7 @@ import bcrypt from "bcrypt";
 import db from "../config/db.js";
 import ROLES from "../constants/roles.js";
 import { createArtist, getArtistByUserIdWithDeleted } from "./artist.service.js";
+import { invalidateSearchIndexCache } from "./search-index.service.js";
 
 const SALT_ROUNDS = 10;
 
@@ -93,6 +94,7 @@ export const createUser = async ({
     });
   }
 
+  invalidateSearchIndexCache("admin");
   return getUserById(result.insertId);
 };
 
@@ -157,11 +159,13 @@ export const updateUserProfile = async (id, data) => {
 
   await db.query(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`, values);
 
+  invalidateSearchIndexCache("admin");
   return getUserById(id);
 };
 
 export const deleteUser = async (id) => {
   await db.query("DELETE FROM users WHERE id = ?", [id]);
+  invalidateSearchIndexCache("admin");
 };
 
 export const changePassword = async (id, oldPassword, newPassword) => {
@@ -198,6 +202,7 @@ export const setActiveStatus = async (id, isActive) => {
     isActive ? 1 : 0,
     id,
   ]);
+  invalidateSearchIndexCache("admin");
   return getUserById(id);
 };
 
@@ -228,5 +233,6 @@ export const setUserRole = async (id, role) => {
     });
   }
 
+  invalidateSearchIndexCache("admin");
   return getUserById(id);
 };
