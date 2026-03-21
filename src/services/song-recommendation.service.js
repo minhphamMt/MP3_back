@@ -50,6 +50,10 @@ const W_ALBUM_BONUS = parseNonNegativeNumber(
   0.1
 );
 const W_GENRE = parseNonNegativeNumber(process.env.SIMILAR_WEIGHT_GENRE, 0.35);
+const HEURISTIC_ARTIST_SCORE = 1.2;
+const HEURISTIC_ALBUM_SCORE = 0.95;
+const HEURISTIC_GENRE_SCORE = 1.1;
+const HEURISTIC_POPULARITY_SCORE = 0.15;
 
 // diversity
 const MAX_PER_ARTIST = parsePositiveInt(
@@ -421,7 +425,7 @@ const getAllCandidates = async (songId, userId, querySong) => {
   }));
 };
 
-const getFallbackCandidates = async (query, excludeSongId, limit) => {
+const getHeuristicCandidates = async (query, excludeSongId, userId, limit) => {
   const safeLimit = parsePositiveInt(limit, FINAL_RESULTS);
   const [rows] = await db.query(
     `
@@ -433,20 +437,42 @@ const getFallbackCandidates = async (query, excludeSongId, limit) => {
       s.play_count,
       GROUP_CONCAT(DISTINCT g.name) AS genres,
       CASE WHEN s.artist_id = ? THEN 1 ELSE 0 END AS same_artist,
-      CASE WHEN s.album_id = ? THEN 1 ELSE 0 END AS same_album
+      CASE WHEN s.album_id = ? THEN 1 ELSE 0 END AS same_album,
+      CASE
+        WHEN EXISTS (
+          SELECT 1
+          FROM song_genres source_sg
+          JOIN song_genres candidate_sg ON candidate_sg.genre_id = source_sg.genre_id
+          WHERE source_sg.song_id = ?
+            AND candidate_sg.song_id = s.id
+          LIMIT 1
+        ) THEN 1 ELSE 0
+      END AS shares_genre
     FROM songs s
     LEFT JOIN song_genres sg ON sg.song_id = s.id
     LEFT JOIN genres g ON g.id = sg.genre_id
     WHERE s.id != ?
       AND ${buildSongPublicVisibilityCondition("s")}
+      AND (
+        ? IS NULL OR s.id NOT IN (
+          SELECT song_id
+          FROM listening_history
+          WHERE user_id = ?
+            AND listened_at >= NOW() - INTERVAL ? HOUR
+        )
+      )
     GROUP BY s.id, s.title, s.artist_id, s.album_id, s.play_count
-    ORDER BY same_artist DESC, same_album DESC, s.play_count DESC, s.id ASC
+    ORDER BY same_artist DESC, same_album DESC, shares_genre DESC, s.play_count DESC, s.id ASC
     LIMIT ?;
     `,
     [
       query.song.artist_id || null,
       query.song.album_id || null,
       excludeSongId,
+      excludeSongId,
+      userId,
+      userId,
+      RECENT_HOURS,
       safeLimit * 5,
     ]
   );
@@ -460,30 +486,43 @@ const getFallbackCandidates = async (query, excludeSongId, limit) => {
         query.genreSet,
         new Set(parseGenreString(row.genres))
       );
-      const fallbackScore =
-        row.same_artist * W_ARTIST_BONUS +
-        row.same_album * W_ALBUM_BONUS +
-        genreSignal.similarity * W_GENRE;
+      const popularityScore =
+        Math.min(Number(row.play_count) || 0, 1_000_000) / 1_000_000;
+      const hasRelation =
+        Boolean(row.same_artist) ||
+        Boolean(row.same_album) ||
+        genreSignal.similarity > 0;
+      const heuristicScore =
+        row.same_artist * HEURISTIC_ARTIST_SCORE +
+        row.same_album * HEURISTIC_ALBUM_SCORE +
+        genreSignal.similarity * HEURISTIC_GENRE_SCORE +
+        popularityScore * HEURISTIC_POPULARITY_SCORE;
 
       return {
         ...row,
-        fallbackScore,
+        heuristicScore,
+        hasRelation,
         hasStrongGenreOverlap: genreSignal.hasStrongOverlap,
       };
     })
     .sort((a, b) => {
-      if (b.fallbackScore !== a.fallbackScore) {
-        return b.fallbackScore - a.fallbackScore;
+      if (b.heuristicScore !== a.heuristicScore) {
+        return b.heuristicScore - a.heuristicScore;
       }
       return b.play_count - a.play_count || a.id - b.id;
     });
 
   for (const row of rankedRows) {
+    if (!row.hasRelation) {
+      continue;
+    }
+
     if (
       query.genreSet.size &&
       !row.same_artist &&
+      !row.same_album &&
       !row.hasStrongGenreOverlap &&
-      row.fallbackScore < MIN_FINAL_SCORE
+      row.heuristicScore < MIN_FINAL_SCORE
     ) {
       continue;
     }
@@ -497,9 +536,7 @@ const getFallbackCandidates = async (query, excludeSongId, limit) => {
     selected.push({
       songId: row.id,
       title: row.title,
-      score: Number(
-        row.fallbackScore.toFixed(6)
-      ),
+      score: Number(row.heuristicScore.toFixed(6)),
     });
 
     if (selected.length >= safeLimit) {
@@ -525,7 +562,7 @@ const buildSimilarSongs = async (songId, userId = null) => {
   }
 
   if (!query.audioVec && !query.metaVec) {
-    return getFallbackCandidates(query, songId, FINAL_RESULTS);
+    return getHeuristicCandidates(query, songId, userId, FINAL_RESULTS);
   }
 
   const candidates = await getAllCandidates(songId, userId, query.song);
@@ -586,7 +623,7 @@ const buildSimilarSongs = async (songId, userId = null) => {
   });
 
   if (!mergedMap.size) {
-    return getFallbackCandidates(query, songId, FINAL_RESULTS);
+    return getHeuristicCandidates(query, songId, userId, FINAL_RESULTS);
   }
 
   /**
@@ -651,7 +688,7 @@ const buildSimilarSongs = async (songId, userId = null) => {
   }
 
   if (!finalResults.length) {
-    return getFallbackCandidates(query, songId, FINAL_RESULTS);
+    return getHeuristicCandidates(query, songId, userId, FINAL_RESULTS);
   }
 
   return finalResults;

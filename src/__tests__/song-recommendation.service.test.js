@@ -70,6 +70,66 @@ describe("song recommendation service", () => {
     expect(result[0].score).toBeGreaterThan(0.3);
   });
 
+  it("uses same artist, genre, and album when the source song has no embeddings", async () => {
+    mockDb.query.mockResolvedValueOnce([
+      [
+        {
+          id: 50,
+          title: "Bai nguon khong embedding",
+          artist_id: 7,
+          album_id: 70,
+          genres: "Ballad",
+        },
+      ],
+    ]);
+
+    mockDb.query.mockResolvedValueOnce([[]]);
+
+    mockDb.query.mockResolvedValueOnce([
+      [
+        {
+          id: 51,
+          title: "Cung nghe si cung album",
+          artist_id: 7,
+          album_id: 70,
+          play_count: 1000,
+          genres: "Ballad",
+          same_artist: 1,
+          same_album: 1,
+        },
+        {
+          id: 52,
+          title: "Cung the loai",
+          artist_id: 8,
+          album_id: 80,
+          play_count: 500000,
+          genres: "Ballad",
+          same_artist: 0,
+          same_album: 0,
+        },
+        {
+          id: 53,
+          title: "Hit khong lien quan",
+          artist_id: 99,
+          album_id: 900,
+          play_count: 2000000,
+          genres: "EDM",
+          same_artist: 0,
+          same_album: 0,
+        },
+      ],
+    ]);
+
+    const { getSimilarSongs } = await loadService();
+
+    const result = await getSimilarSongs(50, null);
+
+    expect(mockDb.query).toHaveBeenCalledTimes(3);
+    expect(result.map((item) => item.songId)).toEqual([51, 52]);
+    expect(result.find((item) => item.songId === 53)).toBeUndefined();
+    expect(result[0].score).toBeGreaterThan(result[1].score);
+  });
+
   it("prioritizes specific genre overlap over broad country genres in fallback mode", async () => {
     mockDb.query.mockResolvedValueOnce([
       [
