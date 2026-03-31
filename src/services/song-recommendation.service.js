@@ -53,7 +53,7 @@ const W_GENRE = parseNonNegativeNumber(process.env.SIMILAR_WEIGHT_GENRE, 0.35);
 const HEURISTIC_ARTIST_SCORE = 1.2;
 const HEURISTIC_ALBUM_SCORE = 0.95;
 const HEURISTIC_GENRE_SCORE = 1.1;
-const HEURISTIC_POPULARITY_SCORE = 0.15;
+const HEURISTIC_POPULARITY_SCORE = 0.03;
 
 // diversity
 const MAX_PER_ARTIST = parsePositiveInt(
@@ -300,6 +300,35 @@ const calculateWeightedGenreSimilarity = (setA, setB) => {
   };
 };
 
+const getHeuristicRelationTier = ({
+  sameArtist,
+  sameAlbum,
+  hasStrongGenreOverlap,
+  genreSimilarity,
+}) => {
+  if (sameArtist && sameAlbum) {
+    return 0;
+  }
+
+  if (sameArtist) {
+    return 1;
+  }
+
+  if (sameAlbum) {
+    return 2;
+  }
+
+  if (hasStrongGenreOverlap) {
+    return 3;
+  }
+
+  if (genreSimilarity > 0) {
+    return 4;
+  }
+
+  return 5;
+};
+
 /**
  * =========================
  * LOAD QUERY SONG
@@ -427,6 +456,10 @@ const getAllCandidates = async (songId, userId, querySong) => {
 
 const getHeuristicCandidates = async (query, excludeSongId, userId, limit) => {
   const safeLimit = parsePositiveInt(limit, FINAL_RESULTS);
+  const heuristicCandidateLimit = Math.min(
+    PRESELECT_CANDIDATES,
+    Math.max(safeLimit * 10, 120)
+  );
   const [rows] = await db.query(
     `
     SELECT
@@ -473,7 +506,7 @@ const getHeuristicCandidates = async (query, excludeSongId, userId, limit) => {
       userId,
       userId,
       RECENT_HOURS,
-      safeLimit * 5,
+      heuristicCandidateLimit,
     ]
   );
 
@@ -486,29 +519,48 @@ const getHeuristicCandidates = async (query, excludeSongId, userId, limit) => {
         query.genreSet,
         new Set(parseGenreString(row.genres))
       );
+      const genreSimilarity = genreSignal.similarity;
+      const sameArtist = Boolean(row.same_artist);
+      const sameAlbum = Boolean(row.same_album);
       const popularityScore =
         Math.min(Number(row.play_count) || 0, 1_000_000) / 1_000_000;
       const hasRelation =
-        Boolean(row.same_artist) ||
-        Boolean(row.same_album) ||
-        genreSignal.similarity > 0;
+        sameArtist ||
+        sameAlbum ||
+        genreSimilarity > 0;
       const heuristicScore =
         row.same_artist * HEURISTIC_ARTIST_SCORE +
         row.same_album * HEURISTIC_ALBUM_SCORE +
-        genreSignal.similarity * HEURISTIC_GENRE_SCORE +
+        genreSimilarity * HEURISTIC_GENRE_SCORE +
         popularityScore * HEURISTIC_POPULARITY_SCORE;
 
       return {
         ...row,
         heuristicScore,
+        genreSimilarity,
         hasRelation,
         hasStrongGenreOverlap: genreSignal.hasStrongOverlap,
+        relationTier: getHeuristicRelationTier({
+          sameArtist,
+          sameAlbum,
+          hasStrongGenreOverlap: genreSignal.hasStrongOverlap,
+          genreSimilarity,
+        }),
       };
     })
     .sort((a, b) => {
+      if (a.relationTier !== b.relationTier) {
+        return a.relationTier - b.relationTier;
+      }
+
       if (b.heuristicScore !== a.heuristicScore) {
         return b.heuristicScore - a.heuristicScore;
       }
+
+      if (b.genreSimilarity !== a.genreSimilarity) {
+        return b.genreSimilarity - a.genreSimilarity;
+      }
+
       return b.play_count - a.play_count || a.id - b.id;
     });
 
@@ -527,8 +579,9 @@ const getHeuristicCandidates = async (query, excludeSongId, userId, limit) => {
       continue;
     }
 
+    const maxPerArtist = row.same_artist ? safeLimit : MAX_PER_ARTIST;
     artistCount[row.artist_id] = artistCount[row.artist_id] || 0;
-    if (artistCount[row.artist_id] >= MAX_PER_ARTIST) {
+    if (artistCount[row.artist_id] >= maxPerArtist) {
       continue;
     }
 

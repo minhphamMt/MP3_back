@@ -130,6 +130,106 @@ describe("song recommendation service", () => {
     expect(result[0].score).toBeGreaterThan(result[1].score);
   });
 
+  it("keeps same-artist fallback results ahead of popular genre-only songs", async () => {
+    mockDb.query.mockResolvedValueOnce([
+      [
+        {
+          id: 70,
+          title: "Nguon fallback",
+          artist_id: 7,
+          album_id: 70,
+          genres: "Ballad",
+        },
+      ],
+    ]);
+
+    mockDb.query.mockResolvedValueOnce([[]]);
+
+    mockDb.query.mockResolvedValueOnce([
+      [
+        {
+          id: 71,
+          title: "Same artist same album",
+          artist_id: 7,
+          album_id: 70,
+          play_count: 100,
+          genres: "Ballad",
+          same_artist: 1,
+          same_album: 1,
+        },
+        {
+          id: 72,
+          title: "Same artist 1",
+          artist_id: 7,
+          album_id: 701,
+          play_count: 200,
+          genres: "Ballad",
+          same_artist: 1,
+          same_album: 0,
+        },
+        {
+          id: 73,
+          title: "Same artist 2",
+          artist_id: 7,
+          album_id: 702,
+          play_count: 300,
+          genres: "Ballad",
+          same_artist: 1,
+          same_album: 0,
+        },
+        {
+          id: 74,
+          title: "Same artist 3",
+          artist_id: 7,
+          album_id: 703,
+          play_count: 400,
+          genres: "Ballad",
+          same_artist: 1,
+          same_album: 0,
+        },
+        {
+          id: 75,
+          title: "Same artist 4",
+          artist_id: 7,
+          album_id: 704,
+          play_count: 500,
+          genres: "Ballad",
+          same_artist: 1,
+          same_album: 0,
+        },
+        {
+          id: 90,
+          title: "Popular genre 1",
+          artist_id: 90,
+          album_id: 900,
+          play_count: 2000000,
+          genres: "Ballad",
+          same_artist: 0,
+          same_album: 0,
+        },
+        {
+          id: 91,
+          title: "Popular genre 2",
+          artist_id: 91,
+          album_id: 901,
+          play_count: 1900000,
+          genres: "Ballad",
+          same_artist: 0,
+          same_album: 0,
+        },
+      ],
+    ]);
+
+    const { getSimilarSongs } = await loadService();
+
+    const result = await getSimilarSongs(70, null);
+    const topFiveIds = result.slice(0, 5).map((item) => item.songId);
+
+    expect(topFiveIds.sort((a, b) => a - b)).toEqual([71, 72, 73, 74, 75]);
+    expect(result.findIndex((item) => item.songId === 90)).toBeGreaterThanOrEqual(5);
+    expect(result.findIndex((item) => item.songId === 91)).toBeGreaterThanOrEqual(5);
+  });
+
   it("prioritizes specific genre overlap over broad country genres in fallback mode", async () => {
     mockDb.query.mockResolvedValueOnce([
       [
