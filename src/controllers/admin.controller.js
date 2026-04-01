@@ -21,6 +21,10 @@ import {
 } from "../services/admin.service.js";
 import { uploadMediaFile } from "../services/storage.service.js";
 import {
+  importSongLyricsFromSource,
+  validateSongLyricsSource,
+} from "../services/lyrics.service.js";
+import {
   listArtistRequests,
   reviewArtistRequest,
 } from "../services/artist-request.service.js";
@@ -31,6 +35,32 @@ const createHttpError = (status, message) => {
   const err = new Error(message);
   err.status = status;
   return err;
+};
+
+const normalizeNullableString = (value) => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+
+  const normalized = String(value).trim();
+  return normalized || null;
+};
+
+const normalizeSongUpdatePayload = (body = {}) => {
+  const payload = { ...body };
+
+  if (payload.lyrics_url && payload.lyrics_path === undefined) {
+    payload.lyrics_path = payload.lyrics_url;
+  }
+
+  if (payload.lyricsPath !== undefined && payload.lyrics_path === undefined) {
+    payload.lyrics_path = payload.lyricsPath;
+  }
+
+  if (payload.lyrics_path !== undefined) {
+    payload.lyrics_path = normalizeNullableString(payload.lyrics_path);
+  }
+
+  return payload;
 };
 
 const getScopedPaginationParams = (query = {}, prefix) => {
@@ -385,7 +415,7 @@ export const listSongsRequest = async (req, res, next) => {
 
 export const updateSongRequest = async (req, res, next) => {
   try {
-    const payload = { ...req.body };
+    const payload = normalizeSongUpdatePayload(req.body);
     const audioFile = req.files?.audio?.[0];
     const coverFile = req.files?.cover?.[0];
 
@@ -411,6 +441,40 @@ export const updateSongRequest = async (req, res, next) => {
 
     const song = await updateSong(req.params.id, payload);
     return successResponse(res, song);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const validateSongLyricsRequest = async (req, res, next) => {
+  try {
+    const result = await validateSongLyricsSource(req.params.id);
+
+    logger.info("Song lyrics source validated", {
+      songId: req.params.id,
+      reviewerId: req.user.id,
+      lineCount: result.line_count,
+    });
+
+    return successResponse(res, result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const importSongLyricsRequest = async (req, res, next) => {
+  try {
+    const result = await importSongLyricsFromSource(req.params.id, {
+      importedBy: req.user.id,
+    });
+
+    logger.info("Song lyrics imported", {
+      songId: req.params.id,
+      reviewerId: req.user.id,
+      importedCount: result.imported_count,
+    });
+
+    return successResponse(res, result);
   } catch (error) {
     return next(error);
   }

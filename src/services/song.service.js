@@ -36,6 +36,12 @@ const normalizeGenres = (genres) => {
 const parseGenreString = (genreString) =>
   genreString ? genreString.split(",").filter(Boolean) : [];
 
+const mapSongRow = (row) => ({
+  ...row,
+  genres: parseGenreString(row.genres),
+  has_lyrics_in_db: Boolean(row.has_lyrics_in_db),
+});
+
 const normalizeArtistIds = (artistIds, fallbackArtistId) => {
   const source = artistIds ?? fallbackArtistId;
   if (source === undefined || source === null || source === "") {
@@ -393,6 +399,11 @@ export const listSongs = async ({
       s.*,
       ar.name AS artist_name,
       al.title AS album_title,
+      EXISTS (
+        SELECT 1
+        FROM lyrics l
+        WHERE l.song_id = s.id
+      ) AS has_lyrics_in_db,
       (
         SELECT GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ',')
         FROM song_genres sg
@@ -410,10 +421,7 @@ export const listSongs = async ({
   );
 
   const songsWithArtists = await attachSongArtists(
-    rows.map((row) => ({
-      ...row,
-      genres: parseGenreString(row.genres),
-    }))
+    rows.map(mapSongRow)
   );
 
   return {
@@ -447,6 +455,11 @@ export const getSongById = async (
       ar.name AS artist_name,
       al.title AS album_title,
       al.release_date AS album_release_date,
+      EXISTS (
+        SELECT 1
+        FROM lyrics l
+        WHERE l.song_id = s.id
+      ) AS has_lyrics_in_db,
       (
         SELECT GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ',')
         FROM song_genres sg
@@ -465,10 +478,7 @@ export const getSongById = async (
   if (!rows[0]) return null;
 
   const [songWithArtists] = await attachSongArtists([
-    {
-      ...rows[0],
-      genres: parseGenreString(rows[0].genres),
-    },
+    mapSongRow(rows[0]),
   ]);
 
   return {
@@ -659,6 +669,7 @@ export const createSong = async ({
   album_id,
   duration,
   audio_path,
+  lyrics_path,
   cover_url,
   status = SONG_STATUS.APPROVED,
   release_date,
@@ -690,12 +701,13 @@ export const createSong = async ({
       album_id,
       duration,
       audio_path,
+      lyrics_path,
       cover_url,
       status,
       release_date,
       zing_song_id
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
     [
       title,
@@ -703,6 +715,7 @@ export const createSong = async ({
       normalizedAlbumId ?? null,
       duration || null,
       audio_path || null,
+      lyrics_path || null,
       cover_url || null,
       status,
       normalizedReleaseDate ?? null,
@@ -728,6 +741,7 @@ export const updateSong = async (
     album_id,
     duration,
     audio_path,
+    lyrics_path,
     cover_url,
     status,
     release_date,
@@ -770,6 +784,7 @@ export const updateSong = async (
     album_id: normalizedAlbumId,
     duration,
     audio_path,
+    lyrics_path,
     cover_url,
     status,
     release_date: normalizedReleaseDate,
@@ -949,6 +964,7 @@ export const listSongsByArtist = async (
       s.title,
       s.duration,
       s.audio_path,
+      s.lyrics_path,
       s.cover_url,
       s.album_id,
       s.status,
@@ -956,6 +972,11 @@ export const listSongsByArtist = async (
       s.release_date,
       s.created_at,
       COALESCE(s.release_date, DATE(s.created_at)) AS published_date,
+      EXISTS (
+        SELECT 1
+        FROM lyrics l
+        WHERE l.song_id = s.id
+      ) AS has_lyrics_in_db,
       al.title AS album_title
     FROM songs s
     LEFT JOIN albums al ON s.album_id = al.id
@@ -983,7 +1004,10 @@ export const listSongsByArtist = async (
 
   return {
     artist: artistRows[0],
-    songs: songRows,
+    songs: songRows.map((row) => ({
+      ...row,
+      has_lyrics_in_db: Boolean(row.has_lyrics_in_db),
+    })),
   };
 };
 

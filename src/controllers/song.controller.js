@@ -44,6 +44,25 @@ const normalizeNullableDate = (value) => {
   return normalized || null;
 };
 
+const normalizeNullableString = (value) => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+
+  const normalized = String(value).trim();
+  return normalized || null;
+};
+
+const stripLyricsSource = (song) => {
+  if (!song) {
+    return song;
+  }
+
+  const sanitized = { ...song };
+  delete sanitized.lyrics_path;
+  delete sanitized.has_lyrics_in_db;
+  return sanitized;
+};
+
 const normalizeSongPayload = (body = {}) => {
   const payload = { ...body };
 
@@ -53,6 +72,14 @@ const normalizeSongPayload = (body = {}) => {
 
   if (payload.cover && payload.cover_url === undefined) {
     payload.cover_url = payload.cover;
+  }
+
+  if (payload.lyrics_url && payload.lyrics_path === undefined) {
+    payload.lyrics_path = payload.lyrics_url;
+  }
+
+  if (payload.lyricsPath !== undefined && payload.lyrics_path === undefined) {
+    payload.lyrics_path = payload.lyricsPath;
   }
 
   if (payload.duration !== undefined && payload.duration !== null && payload.duration !== "") {
@@ -92,6 +119,10 @@ const normalizeSongPayload = (body = {}) => {
 
   if (payload.release_date !== undefined) {
     payload.release_date = normalizeNullableDate(payload.release_date);
+  }
+
+  if (payload.lyrics_path !== undefined) {
+    payload.lyrics_path = normalizeNullableString(payload.lyrics_path);
   }
 
   return payload;
@@ -156,7 +187,11 @@ export const getSongs = async (req, res, next) => {
       includeUnreleased,
     });
 
-    return successResponse(res, result.items, result.meta);
+    const items = includeUnreleased
+      ? result.items
+      : result.items.map(stripLyricsSource);
+
+    return successResponse(res, items, result.meta);
   } catch (error) {
     return next(error);
   }
@@ -190,7 +225,10 @@ export const getSong = async (req, res, next) => {
       return errorResponse(res, "Song not found", 404);
     }
 
-    return successResponse(res, song);
+    return successResponse(
+      res,
+      includeUnreleased ? song : stripLyricsSource(song)
+    );
   } catch (error) {
     return next(error);
   }
@@ -446,7 +484,15 @@ export const getSongsByArtist = async (req, res, next) => {
       includeUnreleased,
     });
 
-    return successResponse(res, songs);
+    return successResponse(
+      res,
+      includeUnreleased
+        ? songs
+        : {
+            ...songs,
+            songs: songs.songs.map(stripLyricsSource),
+          }
+    );
   } catch (err) {
     next(err);
   }

@@ -82,7 +82,7 @@ describe("song.controller artist album handling", () => {
       },
       user: {
         id: 9,
-        role: "artist",
+        role: "ARTIST",
       },
     };
     const res = createResponse();
@@ -101,6 +101,40 @@ describe("song.controller artist album handling", () => {
         artist_id: 77,
         artist_ids: [77],
         status: "pending",
+      })
+    );
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("normalizes lyricsPath into lyrics_path when creating a song", async () => {
+    mockArtistService.getArtistByUserId.mockResolvedValue({ id: 77 });
+    mockSongService.createSong.mockResolvedValue({
+      id: 502,
+      title: "Lyric Source Song",
+      status: "pending",
+      lyrics_path: "uploads/lyric/artist-song.lrc",
+    });
+
+    const { createSongHandler } = await loadController();
+    const req = {
+      body: {
+        title: "Lyric Source Song",
+        lyricsPath: "uploads/lyric/artist-song.lrc",
+      },
+      user: {
+        id: 9,
+        role: "ARTIST",
+      },
+    };
+    const res = createResponse();
+    const next = jest.fn();
+
+    await createSongHandler(req, res, next);
+
+    expect(mockSongService.createSong).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lyrics_path: "uploads/lyric/artist-song.lrc",
       })
     );
     expect(res.status).toHaveBeenCalledWith(201);
@@ -127,7 +161,7 @@ describe("song.controller artist album handling", () => {
       },
       user: {
         id: 9,
-        role: "artist",
+        role: "ARTIST",
       },
     };
     const res = createResponse();
@@ -144,6 +178,38 @@ describe("song.controller artist album handling", () => {
       })
     );
     expect(res.status).toHaveBeenCalledWith(200);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("hides lyrics source fields from public song responses", async () => {
+    mockSongService.getSongById.mockResolvedValue({
+      id: 601,
+      title: "Public Song",
+      artist_id: 77,
+      lyrics_path: "uploads/lyric/public-song.lrc",
+      has_lyrics_in_db: true,
+    });
+
+    const { getSong } = await loadController();
+    const req = {
+      params: { id: "601" },
+      query: {},
+    };
+    const res = createResponse();
+    const next = jest.fn();
+
+    await getSong(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: true,
+        data: expect.not.objectContaining({
+          lyrics_path: expect.anything(),
+          has_lyrics_in_db: expect.anything(),
+        }),
+      })
+    );
     expect(next).not.toHaveBeenCalled();
   });
 });

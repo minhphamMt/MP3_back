@@ -22,6 +22,8 @@ router.patch("/songs/:id/review", adminController.reviewSongRequest);
 router.patch("/songs/:id/approve", adminController.approveSongRequest);
 router.patch("/songs/:id/block", adminController.blockSongRequest);
 router.get("/songs", adminController.listSongsRequest);
+router.post("/songs/:id/lyrics/validate", adminController.validateSongLyricsRequest);
+router.post("/songs/:id/lyrics/import", adminController.importSongLyricsRequest);
 router.put("/songs/:id", uploadSongMedia, adminController.updateSongRequest);
 router.get("/artist-requests", adminController.listArtistRequestsRequest);
 router.patch(
