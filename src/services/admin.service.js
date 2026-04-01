@@ -249,7 +249,10 @@ export const getAdminUserDetail = async (
   }
 
   const [listeningHistory, searchHistory] = await Promise.all([
-    getUserListeningHistory(userId, listening),
+    getUserListeningHistory(userId, {
+      ...listening,
+      includeHiddenSongs: true,
+    }),
     listSearchHistory(userId, search),
   ]);
 

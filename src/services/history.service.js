@@ -1,5 +1,6 @@
 import db from "../config/db.js";
 import { buildPaginationMeta } from "../utils/pagination.js";
+import { buildSongPublicVisibilityCondition } from "../utils/song-visibility.js";
 const createError = (status, message) => {
   const error = new Error(message);
   error.status = status;
@@ -37,16 +38,30 @@ const parseGenreString = (genreString) =>
 
 export const getUserListeningHistory = async (
   userId,
-  { page, limit, offset }
+  { page, limit, offset, includeHiddenSongs = false } = {}
 ) => {
+  const filters = ["lh.user_id = ?"];
+
+  if (includeHiddenSongs) {
+    filters.push("s.is_deleted = 0");
+    filters.push("(ar.id IS NULL OR ar.is_deleted = 0)");
+    filters.push("(al.id IS NULL OR al.is_deleted = 0)");
+  } else {
+    filters.push(buildSongPublicVisibilityCondition("s", { albumAlias: "al" }));
+    filters.push("(ar.id IS NULL OR ar.is_deleted = 0)");
+  }
+
+  const whereClause = `WHERE ${filters.join(" AND ")}`;
+
   // total
   const [countRows] = await db.query(
     `
     SELECT COUNT(*) AS total
     FROM listening_history lh
     JOIN songs s ON s.id = lh.song_id
-    WHERE lh.user_id = ?
-    AND s.is_deleted = 0
+    LEFT JOIN artists ar ON ar.id = s.artist_id
+    LEFT JOIN albums al ON al.id = s.album_id
+    ${whereClause}
     `,
     [userId]
   );
@@ -88,10 +103,7 @@ LEFT JOIN albums al ON al.id = s.album_id
 LEFT JOIN song_genres sg ON sg.song_id = s.id
 LEFT JOIN genres g ON g.id = sg.genre_id
 
-WHERE lh.user_id = ?
-AND s.is_deleted = 0
-AND (ar.id IS NULL OR ar.is_deleted = 0)
-AND (al.id IS NULL OR al.is_deleted = 0)
+${whereClause}
 
 GROUP BY 
   lh.id,
