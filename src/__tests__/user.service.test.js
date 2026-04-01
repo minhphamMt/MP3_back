@@ -36,7 +36,7 @@ describe("user.service artist profile bootstrap", () => {
     mockDb.query
       .mockResolvedValueOnce([[]])
       .mockResolvedValueOnce([{ insertId: 10 }])
-      .mockResolvedValueOnce([[{ id: 10, display_name: "Artist A", role: "artist" }]]);
+      .mockResolvedValueOnce([[{ id: 10, display_name: "Artist A", role: "ARTIST" }]]);
 
     mockGetArtistByUserIdWithDeleted.mockResolvedValue(null);
     mockCreateArtist.mockResolvedValue({ id: 5 });
@@ -47,9 +47,14 @@ describe("user.service artist profile bootstrap", () => {
       display_name: "Artist A",
       email: "a@example.com",
       password: "123456",
-      role: "artist",
+      role: "ARTIST",
     });
 
+    expect(mockDb.query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("artist_register_intent"),
+      ["Artist A", "a@example.com", "hashed-password", "ARTIST", 1, null, 1]
+    );
     expect(mockGetArtistByUserIdWithDeleted).toHaveBeenCalledWith(10);
     expect(mockCreateArtist).toHaveBeenCalledWith({
       user_id: 10,
@@ -61,17 +66,22 @@ describe("user.service artist profile bootstrap", () => {
     mockDb.query
       .mockResolvedValueOnce([[{ id: 22 }]])
       .mockResolvedValueOnce([{ affectedRows: 1 }])
-      .mockResolvedValueOnce([[{ id: 22, display_name: "Restored", role: "artist" }]])
+      .mockResolvedValueOnce([[{ id: 22, display_name: "Restored", role: "ARTIST" }]])
       .mockResolvedValueOnce([{ affectedRows: 1 }])
-      .mockResolvedValueOnce([[{ id: 22, display_name: "Restored", role: "artist" }]]);
+      .mockResolvedValueOnce([[{ id: 22, display_name: "Restored", role: "ARTIST" }]]);
 
     mockGetArtistByUserIdWithDeleted.mockResolvedValue({ id: 7, is_deleted: 1 });
 
     const { setUserRole } = await loadUserService();
 
-    await setUserRole(22, "artist");
+    await setUserRole(22, "ARTIST");
 
     expect(mockGetArtistByUserIdWithDeleted).toHaveBeenCalledWith(22);
+    expect(mockDb.query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("artist_register_intent"),
+      ["ARTIST", "ARTIST", "ARTIST", 22]
+    );
     expect(mockDb.query).toHaveBeenCalledWith(
       "UPDATE artists SET is_deleted = 0 WHERE id = ?",
       [7]

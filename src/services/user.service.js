@@ -80,11 +80,28 @@ export const createUser = async ({
     throw createError(409, "Email already registered");
   }
 
+  const artistRegisterIntent = role === ROLES.ARTIST ? 1 : 0;
   const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
   const [result] = await db.query(
-    `INSERT INTO users (display_name, email, password_hash, role, is_active, avatar_url)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [displayName, email, hashedPassword, role, is_active ? 1 : 0, avatar_url || null]
+    `INSERT INTO users (
+      display_name,
+      email,
+      password_hash,
+      role,
+      is_active,
+      avatar_url,
+      artist_register_intent
+    )
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      displayName,
+      email,
+      hashedPassword,
+      role,
+      is_active ? 1 : 0,
+      avatar_url || null,
+      artistRegisterIntent,
+    ]
   );
 
   if (role === ROLES.ARTIST) {
@@ -223,7 +240,16 @@ export const setUserRole = async (id, role) => {
     throw createError(404, "User not found");
   }
 
-  await db.query("UPDATE users SET role = ? WHERE id = ?", [role, id]);
+  await db.query(
+    `UPDATE users
+     SET role = ?,
+         artist_register_intent = CASE
+           WHEN ? = ? THEN 1
+           ELSE artist_register_intent
+         END
+     WHERE id = ?`,
+    [role, role, ROLES.ARTIST, id]
+  );
 
   if (role === ROLES.ARTIST) {
     const fullUser = await getUserById(id);
