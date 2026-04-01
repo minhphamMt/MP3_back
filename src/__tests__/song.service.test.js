@@ -189,6 +189,19 @@ describe("song.service artist draft handling", () => {
       ],
     });
   });
+
+  it("requires a non-empty audio_path for public song visibility queries", async () => {
+    mockDb.query.mockResolvedValueOnce([[]]);
+
+    const { getSongById } = await loadService();
+    const result = await getSongById(501);
+
+    const [selectSql] = mockDb.query.mock.calls[0];
+
+    expect(selectSql).toContain("s.audio_path IS NOT NULL");
+    expect(selectSql).toContain("s.audio_path <> ''");
+    expect(result).toBeNull();
+  });
 });
 
 describe("song.service play stats aggregation", () => {

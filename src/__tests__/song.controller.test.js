@@ -79,6 +79,7 @@ describe("song.controller artist album handling", () => {
       body: {
         title: "Future Album Track",
         album_id: "123",
+        release_date: "2026-05-01 00:00:00",
       },
       user: {
         id: 9,
@@ -100,6 +101,7 @@ describe("song.controller artist album handling", () => {
         album_id: 123,
         artist_id: 77,
         artist_ids: [77],
+        release_date: "2026-05-01 00:00:00",
         status: "pending",
       })
     );
@@ -158,6 +160,7 @@ describe("song.controller artist album handling", () => {
       body: {
         title: "Standalone Song",
         album_id: "",
+        release_date: "2026-06-15 00:00:00",
       },
       user: {
         id: 9,
@@ -175,6 +178,7 @@ describe("song.controller artist album handling", () => {
       expect.objectContaining({
         title: "Standalone Song",
         album_id: null,
+        release_date: "2026-06-15 00:00:00",
       })
     );
     expect(res.status).toHaveBeenCalledWith(200);

@@ -71,6 +71,8 @@ export const buildSongPublicVisibilityCondition = (
     conditions.push(`${s}.is_deleted = 0`);
   }
 
+  conditions.push(`${s}.audio_path IS NOT NULL`);
+  conditions.push(`${s}.audio_path <> ''`);
   conditions.push(`${s}.status = 'approved'`);
   conditions.push(`${s}.release_date IS NOT NULL`);
   conditions.push(`${s}.release_date <= NOW()`);
