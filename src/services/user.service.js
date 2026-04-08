@@ -1,6 +1,7 @@
 import bcrypt from "bcrypt";
 import db from "../config/db.js";
 import ROLES from "../constants/roles.js";
+import { validatePassword } from "../utils/password.util.js";
 import { createArtist, getArtistByUserIdWithDeleted } from "./artist.service.js";
 import { invalidateSearchIndexCache } from "./search-index.service.js";
 
@@ -66,6 +67,11 @@ export const createUser = async ({
   }
   if (!password) {
     throw createError(400, "password is required");
+  }
+
+  const passwordError = validatePassword(password);
+  if (passwordError) {
+    throw createError(400, passwordError);
   }
 
   const allowedRoles = Object.values(ROLES);
@@ -186,6 +192,10 @@ export const deleteUser = async (id) => {
 };
 
 export const changePassword = async (id, oldPassword, newPassword) => {
+  if (!oldPassword || !newPassword) {
+    throw createError(400, "Old password and new password are required");
+  }
+
   const [rows] = await db.query("SELECT * FROM users WHERE id = ?", [id]);
   const user = rows[0];
 
@@ -196,6 +206,13 @@ export const changePassword = async (id, oldPassword, newPassword) => {
   const isMatch = await bcrypt.compare(oldPassword, user.password_hash);
   if (!isMatch) {
     throw createError(400, "Old password is incorrect");
+  }
+
+  const passwordError = validatePassword(newPassword, {
+    fieldName: "Mat khau moi",
+  });
+  if (passwordError) {
+    throw createError(400, passwordError);
   }
 
   const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);

@@ -47,6 +47,14 @@ const validateField = (key, value, rules) => {
     return formatError(key, `Field must be a valid ${rules.format}`);
   }
 
+  if (
+    rules.pattern &&
+    typeof value === "string" &&
+    !rules.pattern.test(value)
+  ) {
+    return formatError(key, rules.patternMessage || "Field format is invalid");
+  }
+
   if (rules.enum && Array.isArray(rules.enum) && !rules.enum.includes(value)) {
     return formatError(key, `Field must be one of: ${rules.enum.join(", ")}`);
   }

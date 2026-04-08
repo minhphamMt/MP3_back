@@ -279,102 +279,109 @@ Nên đi theo thứ tự:
 
 ### D. Biểu đồ hoạt động
 
-- [x] `D10` - Hoạt động: Đăng ký và xác minh email
-  Luồng chính: đăng ký, tạo mã xác minh, gửi email, xác minh mã, tạo user thật.
-  Tệp mã: `CodeBieuDo/D10_HoatDong_DangKyVaXacMinhEmail.xml`
-  Công cụ: `XML import cho diagrams.net`
-  Ghi chú: Đã bám đúng flow backend hiện tại: đăng ký chỉ tạo bản ghi chờ trong `email_verifications`, còn bước verify mới tạo user thật và phát access/refresh token.
+Chốt lại cho phần này:
 
-- [x] `D11` - Hoạt động: Quên mật khẩu và đặt lại mật khẩu
-  Luồng chính: gửi mã reset, kiểm tra hạn, đổi mật khẩu.
-  Tệp mã: `CodeBieuDo/D11_HoatDong_QuenMatKhauVaDatLaiMatKhau.xml`
+- Chỉ giữ các luồng có nhiều nhánh, trạng thái, transaction hoặc side effect lớn.
+- Các chức năng đã chọn ở activity sẽ không vẽ lại ở phần sequence bên dưới.
+- Không tách riêng CRUD đơn giản như `like/unlike`, `follow/unfollow`, `get list/get by id`, `update profile` thường.
+
+- [x] `D10` - Hoạt động: Đăng ký và xác minh email
+  Luồng chính: đăng ký, tạo mã xác minh, gửi email, xác minh mã, tạo user thật, phát access/refresh token.
+  Tệp mã: `CodeBieuDo/HoatDong/D10_HoatDong_DangKyVaXacMinhEmail.xml`
   Công cụ: `XML import cho diagrams.net`
-  Ghi chú: Đã thể hiện đúng nhánh backend trả thông báo chung ở bước quên mật khẩu để tránh lộ thông tin email hợp lệ; bước reset mới thực sự cập nhật `users.password_hash` và đánh dấu `password_resets.used_at`.
+  Ghi chú: Đã vẽ xong theo khổ A4 dọc, tách 5 cột User / Frontend / Backend / Email Service / TiDB Cloud để các nhánh chính và nhánh lỗi không chồng lên nhau; backend chỉ tạo user thật ở bước verify.
 
 - [x] `D12` - Hoạt động: Cơ chế refresh token ở frontend và backend
-  Luồng chính: request bị `401`, Axios interceptor gọi `/auth/refresh`, nhận token mới, gửi lại request cũ.
-  Tệp mã: `CodeBieuDo/D12_HoatDong_RefreshTokenFrontendVaBackend.xml`
+  Luồng chính: request bị `401`, Axios interceptor gọi `/auth/refresh`, backend kiểm tra refresh token, revoke token cũ, phát token mới, frontend gửi lại request cũ.
+  Tệp mã: `CodeBieuDo/HoatDong/D12_HoatDong_RefreshTokenFrontendVaBackend.xml`
   Công cụ: `XML import cho diagrams.net`
-  Ghi chú: Đã nối đúng mô tả frontend về Axios interceptor với flow backend `refreshTokens()`: verify refresh JWT, kiểm tra revoke, kiểm tra user, revoke token cũ, phát token mới rồi retry request gốc.
+  Ghi chú: Đã vẽ xong theo khổ A4 dọc với 5 cột User / Frontend + Axios / Protected API / Auth API / TiDB Cloud; nhánh lỗi và nhánh retry được tách riêng để không đè line lên trục chính.
 
-- [ ] `D13` - Hoạt động: Gửi và cập nhật yêu cầu artist
-  Luồng chính: tạo request, sửa request, reset trạng thái về pending khi cần.
+- [x] `D14` - Hoạt động: Admin approve/reject artist request
+  Luồng chính: review request, approve hoặc reject, tạo artist mới hoặc khôi phục artist cũ, đổi role user thành `ARTIST`.
+  Tệp mã: `CodeBieuDo/HoatDong/D14_HoatDong_AdminApproveRejectArtistRequest.xml`
+  Công cụ: `XML import cho diagrams.net`
+  Ghi chú: Đã vẽ xong theo khổ A4 dọc, đen trắng, lane liền nhau; nhánh `reject` được tách riêng khỏi trục `approve` để không đè line, còn nhánh `approve` thể hiện đúng logic đảm bảo artist profile active rồi mới đổi role user sang `ARTIST`.
 
-- [ ] `D14` - Hoạt động: Admin approve/reject artist request
-  Luồng chính: review request, tạo hoặc khôi phục artist, đổi role user thành artist.
+- [x] `D16` - Hoạt động: Artist tạo bài hát và đưa vào hàng chờ kiểm duyệt
+  Luồng chính: kiểm tra artist profile, ép `status = pending`, gán artist chính, kiểm tra album có thuộc artist hay không, lưu song/genre/artist liên quan.
+  Tệp mã: `CodeBieuDo/HoatDong/D16_HoatDong_ArtistTaoBaiHatVaDuaVaoHangChoKiemDuyet.xml`
+  Công cụ: `XML import cho diagrams.net`
+  Ghi chú: Nếu media đã được frontend upload trực tiếp lên Firebase Storage thì activity này chỉ cần coi URL media là đầu vào của bước tạo bài hát.
 
-- [ ] `D15` - Hoạt động: Artist upload media
-  Luồng chính thực tế ưu tiên: frontend upload trực tiếp lên Firebase Storage, lấy URL public, sau đó gửi metadata hoặc URL về backend.
+- [x] `D17` - Hoạt động: Admin kiểm duyệt bài hát
+  Luồng chính: review, approve hoặc reject, cập nhật `reviewed_by`, `reject_reason`, `reviewed_at`, và tự gán `release_date` nếu bài được duyệt.
+  Tệp mã: `CodeBieuDo/HoatDong/D17_HoatDong_AdminKiemDuyetBaiHat.xml`
+  Công cụ: `XML import cho diagrams.net`
+  Ghi chú: Đây là flow moderation trung tâm của hệ thống âm nhạc.
 
-- [ ] `D16` - Hoạt động: Artist tạo bài hát
-  Luồng chính: kiểm tra artist profile, gán artist, ép status pending nếu là artist, validate album.
+- [x] `D18` - Hoạt động: Người dùng nghe bài hát và cập nhật thống kê
+  Luồng chính: kiểm tra bài hát public, kiểm tra `duration >= 30s`, chống spam 5 phút, tăng `play_count`, cập nhật thống kê ngày/tuần, ghi listening history.
+  Tệp mã: `CodeBieuDo/HoatDong/D18_HoatDong_NguoiDungNgheBaiHatVaCapNhatThongKe.xml`
+  Công cụ: `XML import cho diagrams.net`
+  Ghi chú: Đây là flow có nhiều điều kiện nghiệp vụ và cập nhật dữ liệu nhất ở phía user.
 
-- [ ] `D17` - Hoạt động: Admin kiểm duyệt bài hát
-  Luồng chính: review, approve, reject, cập nhật release date nếu cần.
-
-- [ ] `D18` - Hoạt động: Người dùng nghe bài hát
-  Luồng chính: gọi `/songs/{id}/play`, kiểm tra bài hát public, xử lý duration, chống spam, tăng play count, cập nhật day/week stats, ghi history.
-
-- [ ] `D19` - Hoạt động: Quản lý playlist
-  Luồng chính: tạo playlist, thêm bài hát, xóa bài hát, đổi vị trí bài hát.
-
-- [ ] `D20` - Hoạt động: Search và lưu lịch sử tìm kiếm
-  Luồng chính: normalize keyword, tìm kiếm, lưu history, cắt dữ liệu cũ.
+- [x] `D19` - Hoạt động: Quản lý playlist
+  Luồng chính: tạo playlist, kiểm tra owner, thêm bài hát, chống trùng, xóa bài hát, reorder vị trí bài hát bằng transaction.
+  Tệp mã: `CodeBieuDo/HoatDong/D19_HoatDong_QuanLyPlaylist.xml`
+  Công cụ: `XML import cho diagrams.net`
+  Ghi chú: Đây là flow tương tác cá nhân nổi bật nhất sau nghe nhạc.
 
 ### E. Biểu đồ trình tự
 
-- [ ] `D21` - Trình tự: Đăng ký và verify email
-  Thành phần: Frontend -> Axios -> Auth API -> Email Service -> TiDB Cloud.
+Chốt lại cho phần này:
 
-- [ ] `D22` - Trình tự: Đăng nhập bằng Firebase
-  Thành phần: Frontend -> Firebase Auth -> lấy `idToken` -> `POST /auth/firebase` -> Backend -> Firebase Admin -> TiDB Cloud.
+- Chỉ chọn các luồng phối hợp nhiều thành phần `Frontend -> Middleware -> Controller -> Service -> Cache/External -> TiDB Cloud`.
+- Không vẽ lại các chức năng đã có ở activity: `D10`, `D12`, `D14`, `D16`, `D17`, `D18`, `D19`.
+- Ưu tiên các luồng thể hiện rõ tích hợp Firebase, cache, search index và dashboard.
 
-- [ ] `D23` - Trình tự: Refresh token tự động qua Axios interceptor
-  Thành phần: Frontend -> Axios -> API bất kỳ -> `401` -> `/auth/refresh` -> nhận token mới -> gửi lại request cũ.
+- [x] `D22` - Trình tự: Đăng nhập bằng Firebase
+  Thành phần: Frontend -> Firebase Auth -> lấy `idToken` -> `POST /auth/firebase` -> Auth Controller -> Auth Service -> Firebase Admin -> TiDB Cloud.
+  Tệp mã: `CodeBieuDo/TrinhTu/D22_TrinhTu_DangNhapBangFirebase.xml`
+  Công cụ: `XML import cho diagrams.net`
+  Ghi chú: Đã dựng lại theo chuẩn UML sequence gọn hơn với icon `boundary / control / entity`, lifeline và activation căn thẳng hàng, `alt` frame chỉ giữ nhánh `user mới` để không sinh line chồng nhau.
 
-- [ ] `D24` - Trình tự: User gửi artist request
-  Thành phần: Frontend -> Axios -> Auth Middleware -> Artist Request Controller -> Artist Request Service -> TiDB Cloud.
+- [x] `D26` - Trình tự: Frontend upload media trực tiếp lên Firebase Storage rồi gửi URL về backend
+  Thành phần: Frontend -> Firebase Storage -> `getDownloadURL()` -> Frontend -> Song API hoặc Admin API -> Backend -> TiDB Cloud.
+  Tệp mã: `CodeBieuDo/TrinhTu/D26_TrinhTu_UploadMediaTrucTiepLenFirebaseStorageVaGuiURLVeBackend.xml`
+  Công cụ: `XML import cho diagrams.net`
+  Ghi chú: Đã vẽ theo cùng template UML sequence đã chốt; sơ đồ chỉ nhấn mạnh việc upload trực tiếp lên Firebase Storage, lấy URL công khai rồi gửi metadata URL về backend để lưu vào TiDB Cloud, không mô tả lại flow kiểm duyệt bài hát.
 
-- [ ] `D25` - Trình tự: Admin approve artist request
-  Thành phần: Frontend -> Axios -> Admin API -> Auth Middleware -> RBAC -> Admin Controller -> Artist Request Service -> Artist Service -> User Service -> TiDB Cloud.
+- [x] `D31` - Trình tự: Search công khai qua search documents hoặc search index
+  Thành phần: Frontend -> Axios -> Search Controller -> Search Service -> Search Documents hoặc Search Index Service -> TiDB Cloud.
+  Tệp mã: `CodeBieuDo/TrinhTu/D31_TrinhTu_SearchCongKhaiQuaSearchDocumentsHoacSearchIndex.xml`
+  Công cụ: `XML import cho diagrams.net`
+  Ghi chú: Đã vẽ theo cùng template UML sequence đã chốt; flow ưu tiên tra `search_documents`, chỉ fallback sang `search_index` khi không có kết quả, không vẽ riêng `save search history`.
 
-- [ ] `D26` - Trình tự: Artist upload media trực tiếp lên Firebase Storage
-  Thành phần: Frontend -> Firebase Storage -> lấy public URL -> Frontend gửi URL về Backend API.
+- [x] `D32` - Trình tự: Lấy bài hát tương tự
+  Thành phần: Frontend -> Axios -> Song Recommendation Controller -> Song Recommendation Service -> Cache -> Embedding/History query -> TiDB Cloud.
+  Tệp mã: `CodeBieuDo/TrinhTu/D32_TrinhTu_LayBaiHatTuongTu.xml`
+  Công cụ: `XML import cho diagrams.net`
+  Ghi chú: Đã vẽ theo cùng template UML sequence đã chốt; flow nhấn mạnh tra cache trước, nếu cache miss thì lấy embedding bài nguồn, lọc bài đã nghe gần đây trong `listening_history`, xếp hạng bằng audio/metadata rồi mới lưu cache.
 
-- [ ] `D27` - Trình tự: Artist tạo hoặc cập nhật bài hát
-  Thành phần: Frontend -> Axios -> Song API -> Song Controller -> Song Service -> TiDB Cloud.
-
-- [ ] `D28` - Trình tự: Admin review bài hát
-  Thành phần: Frontend -> Axios -> Admin API -> Admin Controller -> Song Service -> TiDB Cloud.
-
-- [ ] `D29` - Trình tự: Người dùng nghe bài hát
-  Thành phần: Frontend -> AudioProvider hoặc player store -> `/songs/{id}/play` -> Song Service -> History Service -> TiDB Cloud.
-
-- [ ] `D30` - Trình tự: Quản lý playlist
-  Thành phần: Frontend -> Axios -> Playlist API -> Playlist Controller -> Playlist Service -> transaction trên TiDB Cloud.
-
-- [ ] `D31` - Trình tự: Search và save search history
-  Thành phần: Frontend -> Axios -> Search Controller -> Search Service -> Search Index Service -> TiDB Cloud.
-
-- [ ] `D32` - Trình tự: Lấy bài hát tương tự
-  Thành phần: Frontend -> Axios -> Song Recommendation Controller -> Song Recommendation Service -> Cache -> TiDB Cloud.
-
-- [ ] `D33` - Trình tự: Lấy admin charts
-  Thành phần: Frontend -> Axios -> Admin Controller -> Admin Service -> Cache -> TiDB Cloud.
+- [x] `D33` - Trình tự: Lấy admin charts
+  Thành phần: Frontend -> Auth Middleware -> RBAC -> Admin Controller -> Admin Service -> Charts Cache -> TiDB Cloud.
+  Tệp mã: `CodeBieuDo/TrinhTu/D33_TrinhTu_LayAdminCharts.xml`
+  Công cụ: `XML import cho diagrams.net`
+  Ghi chú: Đã vẽ theo cùng template UML sequence đã chốt; flow nhấn mạnh xác thực + RBAC ở đầu vào, sau đó `Admin Service` chuẩn hóa timezone/bộ lọc, tra `chartsCache`, nếu cache miss thì mới aggregate dữ liệu từ TiDB Cloud rồi lưu lại cache.
 
 ### F. Biểu đồ lớp lĩnh vực
 
-- [ ] `D34` - Biểu đồ lớp lĩnh vực tổng
-  Lớp chính: User, Artist, ArtistRequest, Album, Song, Genre, Lyrics, Playlist, PlaylistSong, SongLike, AlbumLike, ArtistFollow, ListeningHistory, SearchHistory, SongPlayStat, SongEmbedding, EmailVerification, PasswordReset.
+- [x] `D34` - Biểu đồ lớp lĩnh vực tổng
+  Lớp chính: User, Artist, ArtistRequest, Album, Song, Genre, Lyrics, Playlist, ListeningHistory, SearchHistory.
+  Tệp mã: `CodeBieuDo/LopLinhVuc/D34_BieuDoLopLinhVucTong.xml`
+  Công cụ: `XML import cho diagrams.net`
+  Ghi chú: Đã dựng lại từ schema DB theo kiểu UML class diagram 3 ngăn `Tên lớp / Thuộc tính / Hàm`, có bội số quan hệ; các bảng phụ và bảng liên kết chi tiết sẽ tách xuống `D35` và `D36`.
 
-- [ ] `D35` - Biểu đồ lớp lĩnh vực: Nhóm nội dung âm nhạc
-  Lớp chính: Artist, Album, Song, Genre, Lyrics, SongArtist, SongGenre.
+Chốt lại cho phần này:
 
-- [ ] `D36` - Biểu đồ lớp lĩnh vực: Nhóm tương tác người dùng
-  Lớp chính: User, Playlist, PlaylistSong, SongLike, AlbumLike, ArtistFollow, ListeningHistory, SearchHistory.
+- Không nên tách quá nhiều class diagram; `1` sơ đồ tổng và `2` sơ đồ con là đủ.
 
-- [ ] `D37` - Biểu đồ lớp lĩnh vực: Nhóm kiểm duyệt và hỗ trợ hệ thống
-  Lớp chính: ArtistRequest, EmailVerification, PasswordReset, SongPlayStat, SongEmbedding.
+- [ ] `D35` - Biểu đồ lớp lĩnh vực: Nhóm nội dung âm nhạc và phát hành
+  Lớp chính: Artist, Album, Song, Genre, Lyrics, SongArtist, SongGenre, SongEmbedding, SongPlayStat.
+
+- [ ] `D36` - Biểu đồ lớp lĩnh vực: Nhóm tài khoản, tương tác và kiểm duyệt
+  Lớp chính: User, ArtistRequest, Playlist, PlaylistSong, SongLike, AlbumLike, ArtistFollow, ListeningHistory, SearchHistory, EmailVerification, PasswordReset.
 
 ## 6. Danh sách tối thiểu nếu muốn làm gọn
 
@@ -386,30 +393,16 @@ Nếu bạn không muốn vẽ quá nhiều, bộ tối thiểu nên có:
 - [ ] `M04` - UC phân rã: Xác thực và tài khoản
 - [ ] `M05` - UC phân rã: Artist quản lý nội dung
 - [ ] `M06` - UC phân rã: Quản trị hệ thống
-- [ ] `M07` - Hoạt động: Refresh token tự động
-- [ ] `M08` - Hoạt động: Admin approve artist request
-- [ ] `M09` - Hoạt động: Người dùng nghe bài hát
+- [ ] `M07` - Hoạt động: Refresh token ở frontend và backend
+- [ ] `M08` - Hoạt động: Artist tạo bài hát và đưa vào hàng chờ kiểm duyệt
+- [ ] `M09` - Hoạt động: Người dùng nghe bài hát và cập nhật thống kê
 - [ ] `M10` - Trình tự: Đăng nhập bằng Firebase
-- [ ] `M11` - Trình tự: Refresh token tự động qua Axios interceptor
-- [ ] `M12` - Biểu đồ lớp lĩnh vực tổng
+- [ ] `M11` - Trình tự: Frontend upload media trực tiếp lên Firebase Storage rồi gửi URL về backend
+- [ ] `M12` - Trình tự: Lấy bài hát tương tự
+- [ ] `M13` - Biểu đồ lớp lĩnh vực tổng
 
 ## 7. Mẫu ghi chú sau khi hoàn thành
 
 Bạn có thể thêm thông tin sau mỗi mục sau khi vẽ xong.
 
 Ví dụ:
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

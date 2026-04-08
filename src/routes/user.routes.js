@@ -3,9 +3,11 @@ import * as userController from "../controllers/user.controller.js";
 import * as followController from "../controllers/artist-follow.controller.js";
 import authMiddleware from "../middlewares/auth.middleware.js";
 import rbacMiddleware from "../middlewares/rbac.middleware.js";
+import validate from "../middlewares/validate.middleware.js";
 import ROLES from "../constants/roles.js";
 import { getMyLikedAlbums } from "../controllers/user.controller.js";
 import { uploadAdminUserAvatar, uploadAvatar } from "../middlewares/upload.middleware.js";
+import { changePasswordSchema } from "../validations/user.schema.js";
 import {
   uploadAvatar as uploadAvatarController,
   uploadUserAvatarByAdmin,
@@ -17,7 +19,7 @@ router.use(authMiddleware);
 router.get("/me", userController.getCurrentUser);
 router.put("/me", userController.updateProfile);
 router.get("/me/liked-songs", userController.getMyLikedSongs);
-router.patch("/me/password", userController.updatePassword);
+router.patch("/me/password", validate(changePasswordSchema), userController.updatePassword);
 router.post(
   "/me/avatar",
   uploadAvatar,

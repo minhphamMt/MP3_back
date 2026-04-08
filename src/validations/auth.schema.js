@@ -1,8 +1,20 @@
+import {
+  PASSWORD_ALLOWED_MESSAGE,
+  PASSWORD_ALLOWED_PATTERN,
+  PASSWORD_MIN_LENGTH,
+} from "../utils/password.util.js";
+
 export const registerSchema = {
   body: {
     display_name: { type: "string", required: true, minLength: 2 },
     email: { type: "string", required: true, format: "email" },
-    password: { type: "string", required: true, minLength: 6 },
+    password: {
+      type: "string",
+      required: true,
+      minLength: PASSWORD_MIN_LENGTH,
+      pattern: PASSWORD_ALLOWED_PATTERN,
+      patternMessage: PASSWORD_ALLOWED_MESSAGE,
+    },
   },
 };
 
@@ -64,7 +76,13 @@ export const resetPasswordSchema = {
       minLength: 6,
       maxLength: 6,
     },
-    new_password: { type: "string", required: true, minLength: 6 },
+    new_password: {
+      type: "string",
+      required: true,
+      minLength: PASSWORD_MIN_LENGTH,
+      pattern: PASSWORD_ALLOWED_PATTERN,
+      patternMessage: PASSWORD_ALLOWED_MESSAGE,
+    },
   },
 };
 

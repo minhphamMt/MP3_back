@@ -1,4 +1,5 @@
 import { jest } from "@jest/globals";
+import { PASSWORD_ALLOWED_MESSAGE } from "../utils/password.util.js";
 
 const mockDb = {
   query: jest.fn(),
@@ -56,7 +57,15 @@ describe("auth.service email verification flow", () => {
 
   beforeEach(() => {
     jest.resetModules();
-    jest.clearAllMocks();
+    mockDb.query.mockReset();
+    mockDb.getConnection.mockReset();
+    mockSendVerificationEmail.mockReset();
+    mockSendPasswordResetEmail.mockReset();
+    mockConnection.beginTransaction.mockReset();
+    mockConnection.query.mockReset();
+    mockConnection.commit.mockReset();
+    mockConnection.rollback.mockReset();
+    mockConnection.release.mockReset();
     process.env = {
       ...originalEnv,
       JWT_SECRET: "test-secret",
@@ -105,6 +114,24 @@ describe("auth.service email verification flow", () => {
     expect(mockSendVerificationEmail.mock.calls[0][0].verificationCode).toMatch(
       /^\d{6}$/
     );
+  });
+
+  it("registerUser rejects password containing emoji or icon characters", async () => {
+    const { registerUser } = await loadAuthService();
+
+    await expect(
+      registerUser({
+        display_name: "Tester",
+        email: "tester@example.com",
+        password: "secret123😀",
+      })
+    ).rejects.toMatchObject({
+      status: 400,
+      message: PASSWORD_ALLOWED_MESSAGE,
+    });
+
+    expect(mockDb.query).not.toHaveBeenCalled();
+    expect(mockSendVerificationEmail).not.toHaveBeenCalled();
   });
 
   it("verifyEmailRegistration creates user and deletes temporary verification", async () => {
@@ -228,5 +255,23 @@ describe("auth.service email verification flow", () => {
     expect(result).toEqual({ message: "Đặt lại mật khẩu thành công" });
     expect(mockDb.query.mock.calls[2][0]).toContain("UPDATE users SET password_hash");
     expect(mockDb.query.mock.calls[3][0]).toContain("UPDATE password_resets SET used_at");
+  });
+
+  it("resetPassword rejects new password containing emoji or icon characters", async () => {
+    const { resetPassword } = await loadAuthService();
+
+    await expect(
+      resetPassword({
+        email: "tester@example.com",
+        verification_code: "123456",
+        new_password: "new-pass😀",
+      })
+    ).rejects.toMatchObject({
+      status: 400,
+      message: PASSWORD_ALLOWED_MESSAGE,
+    });
+
+    expect(mockDb.query).not.toHaveBeenCalled();
+    expect(mockSendPasswordResetEmail).not.toHaveBeenCalled();
   });
 });

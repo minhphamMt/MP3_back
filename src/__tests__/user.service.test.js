@@ -1,4 +1,5 @@
 import { jest } from "@jest/globals";
+import { PASSWORD_ALLOWED_MESSAGE } from "../utils/password.util.js";
 
 const mockDb = {
   query: jest.fn(),
@@ -6,6 +7,8 @@ const mockDb = {
 
 const mockCreateArtist = jest.fn();
 const mockGetArtistByUserIdWithDeleted = jest.fn();
+const mockBcryptHash = jest.fn().mockResolvedValue("hashed-password");
+const mockBcryptCompare = jest.fn();
 
 const loadUserService = async () => {
   jest.unstable_mockModule("../config/db.js", () => ({
@@ -14,7 +17,8 @@ const loadUserService = async () => {
 
   jest.unstable_mockModule("bcrypt", () => ({
     default: {
-      hash: jest.fn().mockResolvedValue("hashed-password"),
+      hash: mockBcryptHash,
+      compare: mockBcryptCompare,
     },
   }));
 
@@ -29,7 +33,12 @@ const loadUserService = async () => {
 describe("user.service artist profile bootstrap", () => {
   beforeEach(() => {
     jest.resetModules();
-    jest.clearAllMocks();
+    mockDb.query.mockReset();
+    mockCreateArtist.mockReset();
+    mockGetArtistByUserIdWithDeleted.mockReset();
+    mockBcryptHash.mockReset();
+    mockBcryptHash.mockResolvedValue("hashed-password");
+    mockBcryptCompare.mockReset();
   });
 
   it("createUser auto-creates artist profile when role is artist", async () => {
@@ -62,6 +71,25 @@ describe("user.service artist profile bootstrap", () => {
     });
   });
 
+  it("createUser rejects password containing emoji or icon characters", async () => {
+    const { createUser } = await loadUserService();
+
+    await expect(
+      createUser({
+        display_name: "Artist A",
+        email: "a@example.com",
+        password: "123456😀",
+        role: "ARTIST",
+      })
+    ).rejects.toMatchObject({
+      status: 400,
+      message: PASSWORD_ALLOWED_MESSAGE,
+    });
+
+    expect(mockDb.query).not.toHaveBeenCalled();
+    expect(mockCreateArtist).not.toHaveBeenCalled();
+  });
+
   it("setUserRole restores soft-deleted artist profile when promoting to artist", async () => {
     mockDb.query
       .mockResolvedValueOnce([[{ id: 22 }]])
@@ -87,5 +115,29 @@ describe("user.service artist profile bootstrap", () => {
       [7]
     );
     expect(mockCreateArtist).not.toHaveBeenCalled();
+  });
+
+  it("changePassword rejects new password containing emoji or icon characters", async () => {
+    mockDb.query.mockResolvedValueOnce([
+      [
+        {
+          id: 44,
+          password_hash: "hashed-current-password",
+        },
+      ],
+    ]);
+    mockBcryptCompare.mockResolvedValueOnce(true);
+
+    const { changePassword } = await loadUserService();
+
+    await expect(
+      changePassword(44, "CurrentPass1!", "NextPass😀1")
+    ).rejects.toMatchObject({
+      status: 400,
+      message: PASSWORD_ALLOWED_MESSAGE,
+    });
+
+    expect(mockDb.query).toHaveBeenCalledTimes(1);
+    expect(mockBcryptHash).not.toHaveBeenCalled();
   });
 });

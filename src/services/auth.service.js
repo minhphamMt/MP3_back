@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import db from "../config/db.js";
 import { ROLES } from "../constants/roles.js";
 import admin from "../config/firebase.js";
+import { validatePassword } from "../utils/password.util.js";
 import { sendPasswordResetEmail, sendVerificationEmail } from "./email.service.js";
 
 const SALT_ROUNDS = 10;
@@ -187,6 +188,11 @@ export const registerUser = async ({
 
   if (!displayName) {
     throw createError(400, "display_name is required");
+  }
+
+  const passwordError = validatePassword(password);
+  if (passwordError) {
+    throw createError(400, passwordError);
   }
 
   const [existingUsers] = await db.query(
@@ -441,8 +447,11 @@ export const resetPassword = async ({ email, verification_code, new_password }) 
     throw createError(400, "Mã xác thực không hợp lệ");
   }
 
-  if (String(new_password).length < 6) {
-    throw createError(400, "Mật khẩu mới phải có ít nhất 6 ký tự");
+  const passwordError = validatePassword(new_password, {
+    fieldName: "Mat khau moi",
+  });
+  if (passwordError) {
+    throw createError(400, passwordError);
   }
 
   const tokenHash = hashToken(code);
