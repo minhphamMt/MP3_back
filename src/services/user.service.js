@@ -6,6 +6,7 @@ import { createArtist, getArtistByUserIdWithDeleted } from "./artist.service.js"
 import { invalidateSearchIndexCache } from "./search-index.service.js";
 
 const SALT_ROUNDS = 10;
+const DEFAULT_ROLE_REVOKE_REASON = "Artist role revoked by admin";
 
 const createError = (status, message) => {
   const err = new Error(message);
@@ -19,23 +20,82 @@ const sanitizeUser = (user) => {
   return rest;
 };
 
-const ensureArtistProfileForUser = async ({ userId, displayName }) => {
+const ensureArtistProfileForUser = async ({
+  userId,
+  displayName,
+  artistName,
+  bio,
+  avatarUrl,
+}) => {
   if (!userId) return;
+
+  const resolvedName = artistName || displayName;
+  const hasRequestProfile =
+    artistName !== undefined || bio !== undefined || avatarUrl !== undefined;
 
   const existingArtist = await getArtistByUserIdWithDeleted(userId);
   if (existingArtist) {
+    const resolvedBio =
+      bio === undefined ? existingArtist.bio ?? null : bio || null;
+    const resolvedAvatarUrl =
+      avatarUrl === undefined
+        ? existingArtist.avatar_url ?? null
+        : avatarUrl || null;
+
     if (existingArtist.is_deleted) {
-      await db.query("UPDATE artists SET is_deleted = 0 WHERE id = ?", [
-        existingArtist.id,
-      ]);
+      await db.query(
+        `
+        UPDATE artists
+        SET is_deleted = 0,
+            deleted_by = NULL,
+            deleted_by_role = NULL,
+            deleted_at = NULL,
+            name = ?,
+            bio = ?,
+            avatar_url = ?
+        WHERE id = ?
+        `,
+        [
+          resolvedName,
+          resolvedBio,
+          resolvedAvatarUrl,
+          existingArtist.id,
+        ]
+      );
+    } else if (hasRequestProfile) {
+      await db.query(
+        `
+        UPDATE artists
+        SET name = ?,
+            bio = ?,
+            avatar_url = ?
+        WHERE id = ?
+        `,
+        [
+          resolvedName,
+          resolvedBio,
+          resolvedAvatarUrl,
+          existingArtist.id,
+        ]
+      );
     }
     return;
   }
 
-  await createArtist({
+  const artistPayload = {
     user_id: userId,
-    name: displayName,
-  });
+    name: resolvedName,
+  };
+
+  if (bio !== undefined) {
+    artistPayload.bio = bio || null;
+  }
+
+  if (avatarUrl !== undefined) {
+    artistPayload.avatar_url = avatarUrl || null;
+  }
+
+  await createArtist(artistPayload);
 };
 
 export const getAllUsers = async () => {
@@ -119,6 +179,79 @@ export const createUser = async ({
 
   invalidateSearchIndexCache("admin");
   return getUserById(result.insertId);
+};
+
+const revokeArtistProfileForUser = async ({ userId, revokedBy }) => {
+  if (!userId) return;
+
+  await db.query(
+    `
+    UPDATE artists
+    SET is_deleted = 1,
+        deleted_by = ?,
+        deleted_by_role = ?,
+        deleted_at = NOW()
+    WHERE user_id = ?
+      AND is_deleted = 0
+    `,
+    [revokedBy || null, ROLES.ADMIN, userId]
+  );
+};
+
+const rejectArtistRequestsForUser = async ({
+  userId,
+  reviewerId,
+  rejectReason,
+}) => {
+  if (!userId) return;
+
+  await db.query(
+    `
+    UPDATE artist_requests
+    SET status = 'rejected',
+        reject_reason = ?,
+        reviewed_by = ?,
+        reviewed_at = CURRENT_TIMESTAMP
+    WHERE user_id = ?
+    `,
+    [
+      rejectReason || DEFAULT_ROLE_REVOKE_REASON,
+      reviewerId || null,
+      userId,
+    ]
+  );
+};
+
+const getArtistRequestForUser = async (userId) => {
+  if (!userId) return null;
+
+  const [rows] = await db.query(
+    `
+    SELECT id, artist_name, bio, avatar_url, status
+    FROM artist_requests
+    WHERE user_id = ?
+    LIMIT 1
+    `,
+    [userId]
+  );
+
+  return rows[0] || null;
+};
+
+const approveArtistRequestForUser = async ({ userId, reviewerId }) => {
+  if (!userId) return;
+
+  await db.query(
+    `
+    UPDATE artist_requests
+    SET status = 'approved',
+        reject_reason = NULL,
+        reviewed_by = ?,
+        reviewed_at = CURRENT_TIMESTAMP
+    WHERE user_id = ?
+    `,
+    [reviewerId || null, userId]
+  );
 };
 
 export const updateUserProfile = async (id, data) => {
@@ -240,7 +373,11 @@ export const setActiveStatus = async (id, isActive) => {
   return getUserById(id);
 };
 
-export const setUserRole = async (id, role) => {
+export const setUserRole = async (
+  id,
+  role,
+  { reviewerId, rejectReason, syncArtistRequest = true } = {}
+) => {
   if (!role) {
     throw createError(400, "role is required");
   }
@@ -262,20 +399,50 @@ export const setUserRole = async (id, role) => {
      SET role = ?,
          artist_register_intent = CASE
            WHEN ? = ? THEN 1
+           WHEN ? = ? THEN 0
            ELSE artist_register_intent
          END
      WHERE id = ?`,
-    [role, role, ROLES.ARTIST, id]
+    [role, role, ROLES.ARTIST, role, ROLES.USER, id]
   );
 
   if (role === ROLES.ARTIST) {
     const fullUser = await getUserById(id);
+    const artistRequest = syncArtistRequest
+      ? await getArtistRequestForUser(id)
+      : null;
+
     await ensureArtistProfileForUser({
       userId: id,
       displayName: fullUser?.display_name || `Artist ${id}`,
+      artistName: artistRequest?.artist_name,
+      bio: artistRequest?.bio,
+      avatarUrl: artistRequest?.avatar_url,
     });
+
+    if (syncArtistRequest && artistRequest) {
+      await approveArtistRequestForUser({
+        userId: id,
+        reviewerId,
+      });
+    }
   }
 
-  invalidateSearchIndexCache("admin");
+  if (role === ROLES.USER) {
+    await revokeArtistProfileForUser({
+      userId: id,
+      revokedBy: reviewerId,
+    });
+
+    if (syncArtistRequest) {
+      await rejectArtistRequestsForUser({
+        userId: id,
+        reviewerId,
+        rejectReason,
+      });
+    }
+  }
+
+  invalidateSearchIndexCache(role === ROLES.USER ? null : "admin");
   return getUserById(id);
 };

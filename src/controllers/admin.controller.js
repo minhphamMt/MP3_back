@@ -27,6 +27,7 @@ import {
 import {
   listArtistRequests,
   reviewArtistRequest,
+  updateArtistRequestByAdmin,
 } from "../services/artist-request.service.js";
 
 const parseGenreQuery = (query) => query.genre || query.genres || [];
@@ -204,6 +205,46 @@ export const reviewArtistRequestHandler = async (req, res, next) => {
 
     return res.json({
       message: "Artist request reviewed successfully",
+      request,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const updateArtistRequestRequest = async (req, res, next) => {
+  try {
+    const {
+      status,
+      reject_reason,
+      rejectReason,
+      artist_name,
+      artistName,
+      bio,
+      avatar_url,
+      avatarUrl,
+      proof_link,
+      proofLink,
+    } = req.body;
+
+    const request = await updateArtistRequestByAdmin(req.params.id, {
+      status,
+      rejectReason: reject_reason ?? rejectReason,
+      artistName: artist_name ?? artistName,
+      bio,
+      avatarUrl: avatar_url ?? avatarUrl,
+      proofLink: proof_link ?? proofLink,
+      reviewerId: req.user.id,
+    });
+
+    logger.info("Artist request updated by admin", {
+      requestId: req.params.id,
+      status: status || request?.status,
+      reviewerId: req.user.id,
+    });
+
+    return res.json({
+      message: "Artist request updated successfully",
       request,
     });
   } catch (error) {

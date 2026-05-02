@@ -95,6 +95,7 @@ describe("user.service artist profile bootstrap", () => {
       .mockResolvedValueOnce([[{ id: 22 }]])
       .mockResolvedValueOnce([{ affectedRows: 1 }])
       .mockResolvedValueOnce([[{ id: 22, display_name: "Restored", role: "ARTIST" }]])
+      .mockResolvedValueOnce([[]])
       .mockResolvedValueOnce([{ affectedRows: 1 }])
       .mockResolvedValueOnce([[{ id: 22, display_name: "Restored", role: "ARTIST" }]]);
 
@@ -108,13 +109,82 @@ describe("user.service artist profile bootstrap", () => {
     expect(mockDb.query).toHaveBeenNthCalledWith(
       2,
       expect.stringContaining("artist_register_intent"),
-      ["ARTIST", "ARTIST", "ARTIST", 22]
+      ["ARTIST", "ARTIST", "ARTIST", "ARTIST", "USER", 22]
     );
-    expect(mockDb.query).toHaveBeenCalledWith(
-      "UPDATE artists SET is_deleted = 0 WHERE id = ?",
-      [7]
+    expect(mockDb.query).toHaveBeenNthCalledWith(
+      5,
+      expect.stringContaining("UPDATE artists"),
+      ["Restored", null, null, 7]
     );
     expect(mockCreateArtist).not.toHaveBeenCalled();
+  });
+
+  it("setUserRole approves existing artist request when promoting to artist", async () => {
+    mockDb.query
+      .mockResolvedValueOnce([[{ id: 22 }]])
+      .mockResolvedValueOnce([{ affectedRows: 1 }])
+      .mockResolvedValueOnce([[{ id: 22, display_name: "User Name", role: "ARTIST" }]])
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 9,
+            artist_name: "Request Artist",
+            bio: "Request bio",
+            avatar_url: "https://cdn.example/avatar.jpg",
+            status: "rejected",
+          },
+        ],
+      ])
+      .mockResolvedValueOnce([{ affectedRows: 1 }])
+      .mockResolvedValueOnce([[{ id: 22, display_name: "User Name", role: "ARTIST" }]]);
+
+    mockGetArtistByUserIdWithDeleted.mockResolvedValue(null);
+    mockCreateArtist.mockResolvedValue({ id: 7 });
+
+    const { setUserRole } = await loadUserService();
+
+    await setUserRole(22, "ARTIST", {
+      reviewerId: 1,
+    });
+
+    expect(mockCreateArtist).toHaveBeenCalledWith({
+      user_id: 22,
+      name: "Request Artist",
+      bio: "Request bio",
+      avatar_url: "https://cdn.example/avatar.jpg",
+    });
+    expect(mockDb.query).toHaveBeenNthCalledWith(
+      5,
+      expect.stringContaining("UPDATE artist_requests"),
+      [1, 22]
+    );
+  });
+
+  it("setUserRole rejects artist request and soft-deletes artist profile when demoting to user", async () => {
+    mockDb.query
+      .mockResolvedValueOnce([[{ id: 22 }]])
+      .mockResolvedValueOnce([{ affectedRows: 1 }])
+      .mockResolvedValueOnce([{ affectedRows: 1 }])
+      .mockResolvedValueOnce([{ affectedRows: 1 }])
+      .mockResolvedValueOnce([[{ id: 22, display_name: "Former Artist", role: "USER" }]]);
+
+    const { setUserRole } = await loadUserService();
+
+    await setUserRole(22, "USER", {
+      reviewerId: 1,
+      rejectReason: "Khong con la nghe si",
+    });
+
+    expect(mockDb.query).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining("UPDATE artists"),
+      [1, "ADMIN", 22]
+    );
+    expect(mockDb.query).toHaveBeenNthCalledWith(
+      4,
+      expect.stringContaining("UPDATE artist_requests"),
+      ["Khong con la nghe si", 1, 22]
+    );
   });
 
   it("changePassword rejects new password containing emoji or icon characters", async () => {

@@ -223,9 +223,9 @@ Nên đi theo thứ tự:
 
 - [x] `D01` - Biểu đồ khối tổng thể hệ thống thực tế
   Thể hiện đúng: Frontend Web App, Backend API, TiDB Cloud, Firebase Auth, Firebase Storage hoặc GCS, Email Provider.
-  Tệp mã: `CodeBieuDo/D01_BieuDoKhoiTongThe.xml`
+  Tệp mã: `CodeBieuDo/Khoi/D01_BieuDoKhoiTongThe.xml`
   Công cụ: `XML import cho diagrams.net`
-  Ghi chú: Đã chốt bản tổng quan bám TiDB Cloud, Firebase Admin, Firebase Auth, Firebase Storage / GCS và Brevo / SMTP.
+  Ghi chú: Đã dựng lại theo kiểu block overview 3 khối `Frontend / Backend + Data / External Services`; bên trong có các thành phần con như `Browser`, `Giao diện React`, `Axios + Refresh Token`, `Express API`, `Firebase Admin`, `TiDB Cloud`, `Firebase Auth`, `Media Storage`, `Email Provider`.
 
 - [ ] `D02` - Biểu đồ khối nội bộ Backend
   Thể hiện đúng: Routes, Middleware, Controllers, Services, Cache, Firebase Admin integration, TiDB Cloud connection, Email service, Storage service.
@@ -377,11 +377,15 @@ Chốt lại cho phần này:
 
 - Không nên tách quá nhiều class diagram; `1` sơ đồ tổng và `2` sơ đồ con là đủ.
 
-- [ ] `D35` - Biểu đồ lớp lĩnh vực: Nhóm nội dung âm nhạc và phát hành
-  Lớp chính: Artist, Album, Song, Genre, Lyrics, SongArtist, SongGenre, SongEmbedding, SongPlayStat.
+- [x] `D35` - Biểu đồ lớp lĩnh vực: Nhóm nội dung âm nhạc và phát hành
+  Lớp chính: Artist, Album, Song, Genre, Lyrics, SongGenre, SongEmbedding, SongPlayStat.
+  Tệp mã: `CodeBieuDo/LopLinhVuc/D35_BieuDoLopLinhVuc_NhomNoiDungAmNhacVaPhatHanh.xml`
+  Ghi chú: Đã vẽ theo schema DB thật; không thêm `SongArtist` vì schema hiện tại không có bảng này.
 
-- [ ] `D36` - Biểu đồ lớp lĩnh vực: Nhóm tài khoản, tương tác và kiểm duyệt
+- [x] `D36` - Biểu đồ lớp lĩnh vực: Nhóm tài khoản, tương tác và kiểm duyệt
   Lớp chính: User, ArtistRequest, Playlist, PlaylistSong, SongLike, AlbumLike, ArtistFollow, ListeningHistory, SearchHistory, EmailVerification, PasswordReset.
+  Tệp mã: `CodeBieuDo/LopLinhVuc/D36_BieuDoLopLinhVuc_NhomTaiKhoanTuongTacVaKiemDuyet.xml`
+  Ghi chú: Đã vẽ theo schema DB thật; có đặt thêm `Song`, `Album`, `Artist` làm lớp tham chiếu đích để các quan hệ tương tác không bị cụt.
 
 ## 6. Danh sách tối thiểu nếu muốn làm gọn
 

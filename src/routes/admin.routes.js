@@ -27,6 +27,10 @@ router.post("/songs/:id/lyrics/import", adminController.importSongLyricsRequest)
 router.put("/songs/:id", uploadSongMedia, adminController.updateSongRequest);
 router.get("/artist-requests", adminController.listArtistRequestsRequest);
 router.patch(
+  "/artist-requests/:id",
+  adminController.updateArtistRequestRequest
+);
+router.patch(
   "/artist-requests/:id/review",
   adminController.reviewArtistRequestHandler
 );

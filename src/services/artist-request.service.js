@@ -13,6 +13,15 @@ const createError = (status, message) => {
   return err;
 };
 
+const ALLOWED_REVIEW_STATUSES = ["pending", "approved", "rejected"];
+
+const ARTIST_REQUEST_EDIT_FIELDS = [
+  ["artistName", "artist_name"],
+  ["bio", "bio"],
+  ["avatarUrl", "avatar_url"],
+  ["proofLink", "proof_link"],
+];
+
 const getArtistRequestById = async (id) => {
   if (!id) return null;
   const [rows] = await db.query(
@@ -136,8 +145,7 @@ export const reviewArtistRequest = async (
   requestId,
   { status, reviewerId, rejectReason }
 ) => {
-  const allowedStatuses = ["pending", "approved", "rejected"];
-  if (!allowedStatuses.includes(status)) {
+  if (!ALLOWED_REVIEW_STATUSES.includes(status)) {
     throw createError(400, "Invalid status");
   }
 
@@ -171,7 +179,25 @@ export const reviewArtistRequest = async (
         user_id: request.user_id,
       });
     }
-    await setUserRole(request.user_id, ROLES.ARTIST);
+    await setUserRole(request.user_id, ROLES.ARTIST, {
+      reviewerId,
+      syncArtistRequest: false,
+    });
+  }
+
+  if (status === "pending") {
+    await setUserRole(request.user_id, ROLES.USER, {
+      reviewerId,
+      syncArtistRequest: false,
+    });
+  }
+
+  if (status === "rejected") {
+    await setUserRole(request.user_id, ROLES.USER, {
+      reviewerId,
+      rejectReason,
+      syncArtistRequest: false,
+    });
   }
 
   await db.query(
@@ -192,6 +218,97 @@ export const reviewArtistRequest = async (
     ]
   );
 
+  return getArtistRequestById(requestId);
+};
+
+const syncApprovedArtistProfile = async (request) => {
+  if (!request || request.status !== "approved") return;
+
+  await db.query(
+    `
+    UPDATE artists
+    SET name = ?,
+        bio = ?,
+        avatar_url = ?
+    WHERE user_id = ?
+      AND is_deleted = 0
+    `,
+    [
+      request.artist_name,
+      request.bio || null,
+      request.avatar_url || null,
+      request.user_id,
+    ]
+  );
+};
+
+export const updateArtistRequestByAdmin = async (
+  requestId,
+  {
+    artistName,
+    bio,
+    avatarUrl,
+    proofLink,
+    status,
+    reviewerId,
+    rejectReason,
+  }
+) => {
+  const existingRequest = await getArtistRequestById(requestId);
+
+  if (!existingRequest) {
+    throw createError(404, "Artist request not found");
+  }
+
+  if (status !== undefined && !ALLOWED_REVIEW_STATUSES.includes(status)) {
+    throw createError(400, "Invalid status");
+  }
+
+  const payload = {
+    artistName,
+    bio,
+    avatarUrl,
+    proofLink,
+  };
+  const fieldsToUpdate = [];
+  const params = [];
+
+  if (artistName !== undefined && !String(artistName).trim()) {
+    throw createError(400, "artist_name is required");
+  }
+
+  for (const [payloadKey, columnName] of ARTIST_REQUEST_EDIT_FIELDS) {
+    if (payload[payloadKey] !== undefined) {
+      fieldsToUpdate.push(`${columnName} = ?`);
+      params.push(payload[payloadKey] || null);
+    }
+  }
+
+  if (fieldsToUpdate.length === 0 && status === undefined) {
+    throw createError(400, "At least one field or status is required to update");
+  }
+
+  if (fieldsToUpdate.length > 0) {
+    await db.query(
+      `
+      UPDATE artist_requests
+      SET ${fieldsToUpdate.join(", ")}
+      WHERE id = ?
+      `,
+      [...params, requestId]
+    );
+  }
+
+  if (status !== undefined) {
+    return reviewArtistRequest(requestId, {
+      status,
+      reviewerId,
+      rejectReason,
+    });
+  }
+
+  const updatedRequest = await getArtistRequestById(requestId);
+  await syncApprovedArtistProfile(updatedRequest);
   return getArtistRequestById(requestId);
 };
 

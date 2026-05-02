@@ -71,12 +71,15 @@ export const updateUser = async (req, res, next) => {
 
 export const updateUserRole = async (req, res, next) => {
   try {
-    const { role } = req.body;
+    const { role, reject_reason, rejectReason } = req.body;
     if (!role) {
       return res.status(400).json({ message: "role is required" });
     }
 
-    const updated = await setUserRole(req.params.id, role);
+    const updated = await setUserRole(req.params.id, role, {
+      reviewerId: req.user?.id,
+      rejectReason: reject_reason ?? rejectReason,
+    });
     return res.json(updated);
   } catch (error) {
     return next(error);
